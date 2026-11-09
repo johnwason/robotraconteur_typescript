@@ -66,10 +66,21 @@ const robotInfo = await robot.getProperty("robot_info");
 const jointNames = robotInfo.joint_info.map((joint) => joint.joint_identifier.name);
 const current = await getJointPositions(robot);
 
+// Interpolate to the starting position over five seconds. The simulator requires
+// at least five waypoints, no more than 100 ms apart. The cosine blend starts and
+// stops the motion smoothly.
+const waypoints = [];
+const steps = 100;
+for (let i = 0; i <= steps; i++) {
+    const blend = (1 - Math.cos((Math.PI * i) / steps)) / 2;
+    const position = Array.from(current, (value, joint) => value + blend * (start[joint] - value));
+    waypoints.push(waypoint((5 * i) / steps, position));
+}
+
 const trajectory = {
     joint_names: jointNames,
     joint_units: null,
-    waypoints: [waypoint(0, current), waypoint(5, start)],
+    waypoints: waypoints,
     extended: null
 };
 
