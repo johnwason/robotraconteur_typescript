@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import { DataTypes, MessageEntryType, MessageErrorType, NumericArray, primitivesByType } from "./DataTypes.js";
+import { RobotRaconteurError } from "./Error.js";
 import { NodeID } from "./NodeID.js";
 
 // Message Format Version 2 serialization. All values are little-endian. Typed array contents are
@@ -20,6 +21,11 @@ import { NodeID } from "./NodeID.js";
 
 const text_encoder = new TextEncoder();
 const text_decoder = new TextDecoder();
+
+function dataError(message: string): RobotRaconteurError
+{
+    return new RobotRaconteurError(MessageErrorType.DataTypeError, "RobotRaconteur.DataTypeError", message);
+}
 
 export type MessageElementData = NumericArray | string | MessageElementNestedElementList | null;
 
@@ -53,14 +59,14 @@ export class MessageElement
         const d = this.data;
         if (!(d instanceof MessageElementNestedElementList) || (expected !== undefined && d.type !== expected))
         {
-            throw new TypeError("Unexpected data type for message element " + this.elementName);
+            throw dataError("Unexpected data type for message element " + this.elementName);
         }
         return d;
     }
 
     castString(): string
     {
-        if (typeof this.data !== "string") throw new TypeError("Message element is not a string: " + this.elementName);
+        if (typeof this.data !== "string") throw dataError("Message element is not a string: " + this.elementName);
         return this.data;
     }
 }
@@ -73,7 +79,7 @@ export function findElement(elements: MessageElement[], name: string): MessageEl
 export function getElement(elements: MessageElement[], name: string): MessageElement
 {
     const e = findElement(elements, name);
-    if (!e) throw new TypeError("Message element not found: " + name);
+    if (!e) throw dataError("Message element not found: " + name);
     return e;
 }
 

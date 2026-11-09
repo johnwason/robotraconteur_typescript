@@ -16,6 +16,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { DataTypes } from "../../src/DataTypes.js";
+import { RobotRaconteurError } from "../../src/Error.js";
 import { deserializeMessage, Message, MessageEntry, serializeMessage } from "../../src/Message.js";
 import { packElement, TypeContext, unpackElement, VarValue } from "../../src/Pack.js";
 import { parseServiceDefinition, parseTypeDefinition, ServiceDefinition } from "../../src/ServiceDefinition.js";
@@ -246,4 +247,121 @@ test("unknown types are rejected", () =>
     assert.throws(() => packElement("v", parseTypeDefinition("nothere"), 1, def, ctx));
     assert.throws(() => packElement("v", parseTypeDefinition("no.such.type"), 1, def, ctx));
     assert.throws(() => packElement("v", parseTypeDefinition("o"), {}, def, ctx));
+});
+
+function packs(type: string, value: unknown): unknown
+{
+    const e = packElement("v", parseTypeDefinition(type), value, def, ctx);
+    return unpackElement(e, parseTypeDefinition(type), def, ctx);
+}
+
+function rejects(type: string, value: unknown): void
+{
+    assert.throws(() => packElement("v", parseTypeDefinition(type), value, def, ctx), RobotRaconteurError, `${type} accepted ${String(value)}`);
+}
+
+test("plain and differently typed arrays are converted when every value fits", () =>
+{
+    assert.deepEqual(packs("double[]", [1, 2.5]), Float64Array.of(1, 2.5));
+    assert.deepEqual(packs("double[]", Int32Array.of(1, -2)), Float64Array.of(1, -2));
+    assert.deepEqual(packs("double[]", Uint8Array.of(1, 200)), Float64Array.of(1, 200));
+    assert.deepEqual(packs("double[]", Float32Array.of(1.5)), Float64Array.of(1.5));
+    assert.deepEqual(packs("double[]", BigInt64Array.of(5n)), Float64Array.of(5));
+    assert.deepEqual(packs("single[]", Float64Array.of(1.1)), Float32Array.of(1.1));
+    assert.deepEqual(packs("int32[]", Float64Array.of(1, -2)), Int32Array.of(1, -2));
+    assert.deepEqual(packs("int32[]", [1, 2n]), Int32Array.of(1, 2));
+    assert.deepEqual(packs("uint8[]", Int32Array.of(0, 255)), Uint8Array.of(0, 255));
+    assert.deepEqual(packs("int64[]", Float64Array.of(3)), BigInt64Array.of(3n));
+    assert.deepEqual(packs("uint64[]", BigInt64Array.of(3n)), BigUint64Array.of(3n));
+    assert.deepEqual(packs("bool[]", [true, false, 1, 0]), Uint8Array.of(1, 0, 1, 0));
+    assert.deepEqual(packs("cdouble[]", Float32Array.of(1.5, 2.5)), Float64Array.of(1.5, 2.5));
+    assert.deepEqual(packs("cdouble[]", [1, 2, 3, 4]), Float64Array.of(1, 2, 3, 4));
+    assert.deepEqual(packs("double[*]", { dims: [2, 1], array: [1, 2] }), { dims: Uint32Array.of(2, 1), array: Float64Array.of(1, 2) });
+    assert.deepEqual(packs("double[*]", { dims: Float64Array.of(1), array: Int32Array.of(4) }), { dims: Uint32Array.of(1), array: Float64Array.of(4) });
+    assert.deepEqual(packs("double{list}", Float64Array.of(1, 2)), [1, 2]);
+    assert.deepEqual(packs("double[2]", [1, 2]), Float64Array.of(1, 2));
+});
+
+test("subarray views send only the viewed elements", () =>
+{
+    const m = new Message();
+    const e = new MessageEntry(1);
+    const view = Float64Array.of(1, 2, 3, 4).subarray(1, 3);
+    e.addElement(packElement("v", parseTypeDefinition("double[]"), view, def, ctx));
+    m.entries.push(e);
+    assert.deepEqual(deserializeMessage(serializeMessage(m)).entries[0]!.elements[0]!.data, Float64Array.of(2, 3));
+});
+
+test("scalars accept a single element array", () =>
+{
+    assert.equal(packs("double", [1.5]), 1.5);
+    assert.equal(packs("double", Float64Array.of(1.5)), 1.5);
+    assert.equal(packs("int32", Float64Array.of(3)), 3);
+    assert.equal(packs("double", 5n), 5);
+    assert.equal(packs("bool", 1), true);
+    assert.deepEqual(packs("cdouble", Float64Array.of(1, 2)), { real: 1, imag: 2 });
+    assert.deepEqual(packs("cdouble", 3), { real: 3, imag: 0 });
+});
+
+test("values that cannot be represented are rejected rather than altered", () =>
+{
+    rejects("double[]", 5);
+    rejects("double[]", "abc");
+    rejects("double[]", {});
+    rejects("double[]", true);
+    rejects("double[]", null);
+    rejects("double[]", [1, "2"]);
+    rejects("double[]", [1, undefined]);
+    rejects("double[]", [1, null]);
+    rejects("double[]", [[1, 2]]);
+    rejects("double[]", [true]);
+    rejects("double[]", [{ real: 1, imag: 2 }]);
+    rejects("double[]", BigInt64Array.of(9007199254740993n));
+    rejects("single[]", [1e300]);
+    rejects("uint8[]", [300]);
+    rejects("uint8[]", [-1]);
+    rejects("uint8[]", Int32Array.of(256));
+    rejects("int8[]", Uint8Array.of(200));
+    rejects("int32[]", [1.5]);
+    rejects("int32[]", Float64Array.of(0.5));
+    rejects("int32[]", [NaN]);
+    rejects("int32[]", [Infinity]);
+    rejects("int32[]", [2147483648]);
+    rejects("uint32[]", [-1]);
+    rejects("int64[]", [1.5]);
+    rejects("int64[]", [2 ** 60]);
+    rejects("int64[]", [9223372036854775808n]);
+    rejects("uint64[]", BigInt64Array.of(-1n));
+    rejects("bool[]", [2]);
+    rejects("bool[]", Uint8Array.of(0, 2));
+    rejects("cdouble[]", [1, 2, 3]);
+    rejects("cdouble[]", Float64Array.of(1, 2, 3));
+    rejects("cdouble[]", [{ real: 1 }]);
+    rejects("cdouble[]", [{ real: 1, imag: 2 }, 3]);
+    rejects("double", "1.5");
+    rejects("double", {});
+    rejects("double", [1, 2]);
+    rejects("double", true);
+    rejects("int32", 1.5);
+    rejects("uint8", 256);
+    rejects("bool", "true");
+    rejects("cdouble", { real: "1", imag: 2 });
+    rejects("e1", "a");
+    rejects("e1", 1.5);
+    rejects("double[*]", [1, 2]);
+    rejects("double[*]", { dims: [-1], array: [] });
+    rejects("double[*]", { dims: [1.5], array: [1] });
+    rejects("double[*]", { dims: 2, array: [1, 2] });
+    rejects("double{list}", "ab");
+    rejects("double{string}", 5);
+    rejects("double{string}", [1, 2]);
+    rejects("double{int32}", new Map([["a", 1]]));
+    rejects("double{int32}", new Map([[1.5, 1]]));
+    rejects("double{int32}", new Map([[2147483648, 1]]));
+    rejects("vec[]", { x: 1, y: 2 });
+    rejects("vec", { x: "1", y: 2 });
+    rejects("pose", { p: { x: 1, y: 2 }, q: 5, r: [{ x: 5, y: 6 }, { x: 7, y: 8 }] });
+    rejects("inner[]", { i: 1 });
+    rejects("inner", { i: 1.5 });
+    rejects("st", 5);
 });

@@ -73,7 +73,9 @@ try {
 | `enum` | `number` |
 | `varvalue` | `VarValue(value, type)`, for example `new VarValue(new Int32Array([1]), "int32[]")` |
 
-Sending accepts plain numeric arrays in place of typed arrays. Typed arrays and strings can be sent to a `varvalue` without a wrapper because their type is known. Numeric values in a received `varvalue` are always arrays, since the message format does not distinguish scalars.
+Numeric data can be sent as the declared typed array, a plain array, or a typed array of another type. A scalar can also be given as a single element array. Anything else is converted only when every value fits the declared type exactly: fractional values for integer types, values out of range, `NaN` for integer types, non-numeric entries, and arrays where a scalar is expected are all rejected with a `RobotRaconteurError` rather than rounded, wrapped, or truncated. Sending a typed array of exactly the declared type does not copy or scan it, except for `bool[]`, whose `Uint8Array` values must be 0 or 1. Complex data can also be sent as an array of `{ real, imag }` objects or a plain number, which becomes a value with no imaginary part.
+
+Typed arrays and strings can be sent to a `varvalue` without a wrapper because their type is known. A plain array or number sent to a `varvalue` must use `VarValue` to state its type. Numeric values in a received `varvalue` are always arrays, since the message format does not distinguish scalars.
 
 ### Errors
 
@@ -95,7 +97,7 @@ The result is plain JSON described by [service-definition.schema.json](service-d
 
 | Bundle | Minified | Gzipped |
 | --- | --- | --- |
-| Client | 43.3 KB | 13.4 KB |
+| Client | 44.6 KB | 13.8 KB |
 | Parser only | 7.2 KB | 2.7 KB |
 | Validators | 8.6 KB | 3.1 KB |
 

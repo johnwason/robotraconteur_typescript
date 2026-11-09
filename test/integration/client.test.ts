@@ -421,6 +421,29 @@ test("released object references fail", async () =>
     }
 });
 
+test("plain and differently typed arrays reach the service as the declared type", async () =>
+{
+    const r = await node.connectService(url("RobotRaconteurTestService"));
+    try
+    {
+        const o = await r.getObjRef("o1");
+        await o.setProperty("d1", [1.5, 2.5]);
+        assert.deepEqual(await o.getProperty("d1"), Float64Array.of(1.5, 2.5));
+        await o.setProperty("d1", Int32Array.of(3, -4));
+        assert.deepEqual(await o.getProperty("d1"), Float64Array.of(3, -4));
+        await o.setProperty("d2", { dims: [2, 1], array: Uint8Array.of(5, 6) });
+        assert.deepEqual(await o.getProperty("d2"), { dims: Uint32Array.of(2, 1), array: Float64Array.of(5, 6) });
+
+        await assert.rejects(o.setProperty("d1", 5), (e: RobotRaconteurError) => e.errorName === "RobotRaconteur.DataTypeError" && e.message.includes("value"));
+        await assert.rejects(o.setProperty("d1", ["a"]), RobotRaconteurError);
+        assert.deepEqual(await o.getProperty("d1"), Float64Array.of(3, -4));
+    }
+    finally
+    {
+        await node.disconnectService(r);
+    }
+});
+
 test("local misuse is reported before sending", async () =>
 {
     const r = await node.connectService(url("RobotRaconteurTestService"));

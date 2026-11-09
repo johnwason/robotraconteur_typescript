@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { DataTypes, NumericArray, PrimitiveInfo, primitivesByName, primitivesByType } from "./DataTypes.js";
+import { DataTypes, MessageErrorType, NumericArray, PrimitiveInfo, primitivesByName, primitivesByType } from "./DataTypes.js";
+import { RobotRaconteurError } from "./Error.js";
 import { MessageElement } from "./Message.js";
 import { EntryDefinition, parseTypeDefinition, ServiceDefinition, TypeDefinition } from "./ServiceDefinition.js";
 
@@ -59,9 +60,9 @@ interface NamedArrayLayout
     fields: NamedArrayField[];
 }
 
-function dataError(message: string): TypeError
+function dataError(message: string): RobotRaconteurError
 {
-    return new TypeError(message);
+    return new RobotRaconteurError(MessageErrorType.DataTypeError, "RobotRaconteur.DataTypeError", message);
 }
 
 function isComplexObject(v: unknown): v is { real: number; imag: number }
@@ -148,11 +149,6 @@ export class TypeContext
     }
 }
 
-function setScalar(a: NumericArray, i: number, v: unknown): void
-{
-    (a as unknown as unknown[])[i] = a instanceof BigInt64Array || a instanceof BigUint64Array ? BigInt(v as number) : Number(v);
-}
-
 function writeNamedArray(l: NamedArrayLayout, v: Record<string, unknown>, a: NumericArray, base: number): void
 {
     if (typeof v !== "object" || v === null) throw dataError("Expected object for named array");
@@ -174,23 +170,9 @@ function writeNamedArray(l: NamedArrayLayout, v: Record<string, unknown>, a: Num
             continue;
         }
         const p = f.prim!;
-        if (!f.isArray)
-        {
-            if (p.stride === 2)
-            {
-                const c = fv as { real: number; imag: number };
-                setScalar(a, at, c.real);
-                setScalar(a, at + 1, c.imag);
-            }
-            else
-            {
-                setScalar(a, at, fv);
-            }
-            continue;
-        }
-        const arr = toNumericArray(fv, p);
+        const arr = f.isArray ? toNumericArray(fv, p, f.name) : toScalarArray(fv, p, f.name);
         if (arr.length !== f.count * p.stride) throw dataError("Array dimension mismatch for field: " + f.name);
-        for (let i = 0; i < arr.length; i++) setScalar(a, at + i, arr[i]);
+        (a as unknown as { set(x: unknown, offset: number): void }).set(arr, at);
     }
 }
 
@@ -234,23 +216,76 @@ function scalarFromArray(a: NumericArray, p: PrimitiveInfo, i: number): unknown
     return a[i];
 }
 
-function toNumericArray(v: unknown, p: PrimitiveInfo): NumericArray
+/** Convert one value to the declared numeric type. Values that would change are rejected */
+function convertNumber(x: unknown, p: PrimitiveInfo, where: string): number | bigint
 {
-    if (v instanceof p.ctor) return v as NumericArray;
-    if (v === null || v === undefined) throw dataError("Expected numeric array");
+    const invalid = () => dataError(`Invalid ${p.name} value for ${where}: ${String(x)}`);
 
-    if (p.stride === 2 && Array.isArray(v) && isComplexObject(v[0]))
+    if (p.type === DataTypes.bool_t)
     {
-        const out: number[] = [];
-        for (const c of v as { real: number; imag: number }[]) out.push(c.real, c.imag);
-        return p.ctor.from(out);
+        if (x === true || x === 1 || x === 1n) return 1;
+        if (x === false || x === 0 || x === 0n) return 0;
+        throw invalid();
     }
-    const source = v as ArrayLike<unknown>;
-    if (p.ctor === (BigInt64Array as unknown) || p.ctor === (BigUint64Array as unknown))
+    if (typeof x !== "number" && typeof x !== "bigint") throw invalid();
+
+    if (p.ctor === (Float64Array as unknown) || p.ctor === (Float32Array as unknown))
     {
-        return p.ctor.from(Array.from(source, (x) => BigInt(x as number)));
+        const n = Number(x);
+        if (typeof x === "bigint" && BigInt(n) !== x) throw invalid();
+        if (p.ctor === (Float32Array as unknown) && Number.isFinite(n) && !Number.isFinite(Math.fround(n))) throw invalid();
+        return n;
     }
-    return p.ctor.from(Array.from(source, (x) => Number(x)));
+
+    if (typeof x === "number" && !Number.isSafeInteger(x)) throw invalid();
+    const bits = p.size * 8;
+    const signed = !p.name.startsWith("u");
+    // These limits are exactly representable, and comparing a bigint to a number is exact
+    if (x < (signed ? -(2 ** (bits - 1)) : 0) || x >= (signed ? 2 ** (bits - 1) : 2 ** bits)) throw invalid();
+    return bits === 64 ? BigInt(x) : Number(x);
+}
+
+function isArrayValue(v: unknown): v is ArrayLike<unknown>
+{
+    return Array.isArray(v) || (ArrayBuffer.isView(v) && !(v instanceof DataView));
+}
+
+/** Get the declared typed array from a plain array or a typed array of another type */
+function toNumericArray(v: unknown, p: PrimitiveInfo, where: string): NumericArray
+{
+    if (!isArrayValue(v)) throw dataError(`Expected array for ${where}`);
+    if (p.stride === 2 && Array.isArray(v) && v.some(isComplexObject))
+    {
+        const a = new p.ctor(v.length * 2) as unknown as (number | bigint)[];
+        v.forEach((c, i) =>
+        {
+            if (!isComplexObject(c)) throw dataError(`Invalid ${p.name} value for ${where}: ${String(c)}`);
+            a[i * 2] = convertNumber(c.real, p, where);
+            a[i * 2 + 1] = convertNumber(c.imag, p, where);
+        });
+        return a as unknown as NumericArray;
+    }
+
+    if (v.length % p.stride !== 0) throw dataError(`Interleaved complex array has odd length for ${where}`);
+    // Boolean arrays share Uint8Array so their values must always be checked
+    if (v instanceof p.ctor && p.type !== DataTypes.bool_t) return v as NumericArray;
+
+    const a = new p.ctor(v.length) as unknown as (number | bigint)[];
+    for (let i = 0; i < v.length; i++) a[i] = convertNumber(v[i], p, where);
+    return a as unknown as NumericArray;
+}
+
+/** Get a typed array holding one scalar, given a value or a single element array */
+function toScalarArray(v: unknown, p: PrimitiveInfo, where: string): NumericArray
+{
+    if (isArrayValue(v))
+    {
+        const a = toNumericArray(v, p, where);
+        if (a.length !== p.stride) throw dataError(`Expected scalar for ${where}`);
+        return a;
+    }
+    if (p.stride === 1) return toNumericArray([v], p, where);
+    return toNumericArray(isComplexObject(v) ? [v] : [v, 0], p, where);
 }
 
 function verifyArrayLength(count: number, t: TypeDefinition): void
@@ -272,9 +307,28 @@ function verifyDims(dims: ArrayLike<number>, t: TypeDefinition): void
     if (dims.length !== len.length || len.some((x, i) => x !== dims[i])) throw dataError("Array dimension mismatch");
 }
 
-function toDims(v: unknown): Uint32Array
+function toDims(v: unknown, where: string): Uint32Array
 {
-    return v instanceof Uint32Array ? v : Uint32Array.from(v as ArrayLike<number>);
+    return toNumericArray(v, primitivesByName.get("uint32")!, where + " dims") as Uint32Array;
+}
+
+function toItems(v: unknown, where: string): Record<string, unknown>[]
+{
+    if (!Array.isArray(v)) throw dataError(`Expected Array for ${where}`);
+    return v as Record<string, unknown>[];
+}
+
+function isMultiDimValue(v: unknown): v is MultiDimArray
+{
+    return typeof v === "object" && v !== null && "dims" in v && "array" in v;
+}
+
+function toMultiDim(v: unknown, t: TypeDefinition, name: string): { dims: Uint32Array; array: unknown }
+{
+    if (!isMultiDimValue(v)) throw dataError(`Expected { dims, array } for ${name}`);
+    const dims = toDims(v.dims, name);
+    verifyDims(dims, t);
+    return { dims, array: v.array };
 }
 
 function withoutContainer(t: TypeDefinition): TypeDefinition
@@ -318,7 +372,7 @@ export function packElement(name: string, t: TypeDefinition, v: unknown, scope: 
     switch (r.kind)
     {
     case "enum":
-        return new MessageElement(name, DataTypes.int32_t, Int32Array.of(v as number));
+        return new MessageElement(name, DataTypes.int32_t, Int32Array.of(convertNumber(v, primitivesByName.get("int32")!, name) as number));
     case "struct":
         return packStructure(name, v, r, ctx);
     case "pod":
@@ -340,12 +394,18 @@ function packContainer(name: string, t: TypeDefinition, v: unknown, scope: Servi
     const elements: MessageElement[] = [];
     if (c === "list")
     {
-        if (!Array.isArray(v)) throw dataError("Expected Array for list " + name);
-        v.forEach((x, i) => elements.push(packElement(String(i), item, x, scope, ctx)));
+        if (!isArrayValue(v)) throw dataError("Expected Array for list " + name);
+        Array.from(v).forEach((x, i) => elements.push(packElement(String(i), item, x, scope, ctx)));
         return MessageElement.nested(name, DataTypes.list_t, "", elements);
     }
+    if (typeof v !== "object" || isArrayValue(v)) throw dataError("Expected Map for " + name);
     const entries = v instanceof Map ? [...v.entries()] : Object.entries(v as object);
-    for (const [k, x] of entries) elements.push(packElement(String(k), item, x, scope, ctx));
+    for (const [k, x] of entries)
+    {
+        if (c === "map_string" && typeof k !== "string") throw dataError("Invalid map key for " + name);
+        const key = c === "map_string" ? k : convertNumber(typeof k === "string" && /^-?\d+$/.test(k) ? Number(k) : k, primitivesByName.get("int32")!, name + " key");
+        elements.push(packElement(String(key), item, x, scope, ctx));
+    }
     return MessageElement.nested(name, c === "map_int32" ? DataTypes.vector_t : DataTypes.dictionary_t, "", elements);
 }
 
@@ -353,33 +413,18 @@ function packNumeric(name: string, t: TypeDefinition, v: unknown, p: PrimitiveIn
 {
     if (t.array === "multidimarray")
     {
-        const m = v as MultiDimArray;
-        if (m === null || m === undefined) throw dataError("Expected multidimensional array for " + name);
-        const dims = toDims(m.dims);
-        const array = toNumericArray(m.array, p);
-        verifyDims(dims, t);
+        const { dims, array: source } = toMultiDim(v, t, name);
+        const array = toNumericArray(source, p, name);
         if (dims.reduce((a, b) => a * b, 1) * p.stride !== array.length) throw dataError("Array dimension mismatch for " + name);
         return MessageElement.nested(name, DataTypes.multidimarray_t, "", [new MessageElement("dims", DataTypes.uint32_t, dims), new MessageElement("array", p.type, array)]);
     }
     if (t.array)
     {
-        const a = toNumericArray(v, p);
+        const a = toNumericArray(v, p, name);
         verifyArrayLength(a.length / p.stride, t);
         return new MessageElement(name, p.type, a);
     }
-    if (v === null || v === undefined) throw dataError("Expected number for " + name);
-    const a = new p.ctor(p.stride);
-    if (p.stride === 2)
-    {
-        const c = v as { real: number; imag: number };
-        setScalar(a, 0, c.real);
-        setScalar(a, 1, c.imag);
-    }
-    else
-    {
-        setScalar(a, 0, v);
-    }
-    return new MessageElement(name, p.type, a);
+    return new MessageElement(name, p.type, toScalarArray(v, p, name));
 }
 
 function flatPodFieldType(t: TypeDefinition): TypeDefinition
@@ -389,15 +434,13 @@ function flatPodFieldType(t: TypeDefinition): TypeDefinition
 
 function packFields(v: Record<string, unknown>, r: ResolvedType, ctx: TypeContext): MessageElement[]
 {
+    if (typeof v !== "object" || isArrayValue(v)) throw dataError("Expected object for " + r.qualifiedName);
     return r.entry!.members.map((m) =>
     {
         const t = m.type!;
         // Fixed multidimensional pod fields are sent flattened since the dimensions are known
         if (r.kind !== "pod" || t.array !== "multidimarray") return packElement(m.name, t, v[m.name], r.def, ctx);
-        const f = v[m.name] as MultiDimArray;
-        if (f === null || f === undefined) throw dataError("Missing pod field: " + m.name);
-        verifyDims(toDims(f.dims), t);
-        return packElement(m.name, flatPodFieldType(t), f.array, r.def, ctx);
+        return packElement(m.name, flatPodFieldType(t), toMultiDim(v[m.name], t, m.name).array, r.def, ctx);
     });
 }
 
@@ -418,16 +461,14 @@ function packPod(name: string, t: TypeDefinition, v: unknown, r: ResolvedType, c
     if (v === null || v === undefined) throw dataError("Expected pod for " + name);
     if (t.array === "multidimarray")
     {
-        const m = v as MultiDimArray;
-        const dims = toDims(m.dims);
-        const items = m.array as Record<string, unknown>[];
-        verifyDims(dims, t);
+        const { dims, array } = toMultiDim(v, t, name);
+        const items = toItems(array, name);
         if (dims.reduce((a, b) => a * b, 1) !== items.length) throw dataError("Array dimension mismatch for " + name);
         return MessageElement.nested(name, DataTypes.pod_multidimarray_t, r.qualifiedName, [new MessageElement("dims", DataTypes.uint32_t, dims), packPodArray("array", items, r, ctx)]);
     }
     if (t.array)
     {
-        const items = v as Record<string, unknown>[];
+        const items = toItems(v, name);
         verifyArrayLength(items.length, t);
         return packPodArray(name, items, r, ctx);
     }
@@ -447,16 +488,14 @@ function packNamedArray(name: string, t: TypeDefinition, v: unknown, r: Resolved
     if (v === null || v === undefined) throw dataError("Expected named array for " + name);
     if (t.array === "multidimarray")
     {
-        const m = v as MultiDimArray;
-        const dims = toDims(m.dims);
-        const items = m.array as Record<string, unknown>[];
-        verifyDims(dims, t);
+        const { dims, array } = toMultiDim(v, t, name);
+        const items = toItems(array, name);
         if (dims.reduce((a, b) => a * b, 1) !== items.length) throw dataError("Array dimension mismatch for " + name);
         return MessageElement.nested(name, DataTypes.namedarray_multidimarray_t, r.qualifiedName, [new MessageElement("dims", DataTypes.uint32_t, dims), packNamedArrayItems("array", items, r, ctx)]);
     }
     if (t.array)
     {
-        const items = v as Record<string, unknown>[];
+        const items = toItems(v, name);
         verifyArrayLength(items.length, t);
         return packNamedArrayItems(name, items, r, ctx);
     }
