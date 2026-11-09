@@ -11,6 +11,6 @@ sys.path.insert(0, os.path.join(core, "python"))
 from RobotRaconteurTest.service_test_util import TestServerNodeConfig  # noqa: E402
 
 config = TestServerNodeConfig("rr_ts_test_server")
-print("PORT", config.node_setup.tcp_transport.GetListenPort(), flush=True)
+print(f"PORT {config.node_setup.tcp_transport.GetListenPort()}", flush=True)
 sys.stdin.read()
 config.shutdown()

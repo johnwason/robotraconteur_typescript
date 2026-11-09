@@ -43,9 +43,12 @@ before(async () =>
     });
     port = await new Promise<number>((resolve, reject) =>
     {
+        // Output can arrive in any number of pieces, so match against everything received so far
+        let output = "";
         server.stdout!.on("data", (d: Buffer) =>
         {
-            const m = /PORT (\d+)/.exec(d.toString());
+            output += d.toString();
+            const m = /PORT (\d+)\n/.exec(output);
             if (m) resolve(Number(m[1]));
         });
         server.on("exit", () => reject(new Error("Test server exited")));
