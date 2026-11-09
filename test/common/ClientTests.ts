@@ -280,9 +280,9 @@ function password(p: string): Map<string, unknown>
 }
 
 /** Build the list of client tests for a server listening on the given port */
-export function clientTests(node: RobotRaconteurNode, port: number, vectors: Vectors): ClientTest[]
+export function clientTests(node: RobotRaconteurNode, port: number, vectors: Vectors, scheme = "rr+ws"): ClientTest[]
 {
-    const url = (s: string) => `rr+ws://localhost:${port}?service=${s}`;
+    const url = (s: string) => `${scheme}://localhost:${port}?service=${s}`;
 
     const withClient = (service: string, fn: (r: ServiceStub) => Promise<void>) => async () =>
     {
@@ -479,10 +479,10 @@ export function clientTests(node: RobotRaconteurNode, port: number, vectors: Vec
 
     add("connection failures are reported", async () =>
     {
-        await assert.rejects(node.connectService("rr+ws://localhost:1?service=x"), RobotRaconteurError);
+        await assert.rejects(node.connectService(`${scheme}://localhost:1?service=x`), RobotRaconteurError);
         await assert.rejects(node.connectService("rr+pipe://x?service=x"), RobotRaconteurError);
         await assert.rejects(node.connectService(url("no_such_service")), RobotRaconteurError);
-        await assert.rejects(node.connectService(`rr+ws://localhost:${port}?service=${S1}&nodename=wrong_node`), RobotRaconteurError);
+        await assert.rejects(node.connectService(`${scheme}://localhost:${port}?service=${S1}&nodename=wrong_node`), RobotRaconteurError);
     });
 
     return tests;

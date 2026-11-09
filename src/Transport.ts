@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import { RobotRaconteurError } from "./Error.js";
-import type { ClientContext } from "./Client.js";
 import { Message } from "./Message.js";
 import { NodeID } from "./NodeID.js";
 import { MessageErrorType } from "./DataTypes.js";
@@ -72,6 +71,14 @@ export function parseConnectionUrl(url: string): ParsedConnectionUrl
     return { scheme, host, port, path: m[4] ? m[4] : "/", nodeid: nodeid ? new NodeID(nodeid) : NodeID.Any, nodename, service };
 }
 
+/** One end of a client or service session, identified by a number unique within the node */
+export interface Endpoint
+{
+    localEndpoint: number;
+    messageReceived(m: Message): void;
+    transportConnectionClosed(): void;
+}
+
 /** A connected transport stream used by one client */
 export interface ITransportConnection
 {
@@ -87,6 +94,6 @@ export interface ITransportConnection
 export interface Transport
 {
     canConnectService(url: string): boolean;
-    createTransportConnection(url: string, client: ClientContext): Promise<ITransportConnection>;
+    createTransportConnection(url: string, endpoint: Endpoint): Promise<ITransportConnection>;
     close(): void;
 }

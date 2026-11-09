@@ -16,7 +16,7 @@ import { ClientContext, ServiceStub } from "./Client.js";
 import { Message } from "./Message.js";
 import { NodeID } from "./NodeID.js";
 import { parseServiceDefinition, ServiceDefinition } from "./ServiceDefinition.js";
-import { parseConnectionUrl, Transport } from "./Transport.js";
+import { Endpoint, parseConnectionUrl, Transport } from "./Transport.js";
 import { RobotRaconteurError } from "./Error.js";
 import { MessageErrorType } from "./DataTypes.js";
 
@@ -34,7 +34,8 @@ export class RobotRaconteurNode
     readonly serviceTypes = new Map<string, ServiceDefinition>();
 
     private transports: Transport[] = [];
-    private endpoints = new Map<number, ClientContext>();
+    private endpoints = new Map<number, Endpoint>();
+    private clients = new Set<ClientContext>();
 
     registerTransport(transport: Transport): void
     {
@@ -59,7 +60,7 @@ export class RobotRaconteurNode
             throw new RobotRaconteurError(MessageErrorType.ConnectionError, "RobotRaconteur.ConnectionError", "Could not find a transport for URL: " + url);
         }
         const c = new ClientContext(this);
-        this.registerEndpoint(c);
+        this.registerClient(c);
         try
         {
             return await c.connectService(transport, url, username, credentials, objectType);
@@ -79,11 +80,18 @@ export class RobotRaconteurNode
     /** Close all clients and transports */
     async shutdown(): Promise<void>
     {
-        await Promise.all([...this.endpoints.values()].map((c) => c.close()));
+        await Promise.all([...this.clients].map((c) => c.close()));
         this.transports.forEach((t) => t.close());
     }
 
-    private registerEndpoint(c: ClientContext): void
+    private registerClient(c: ClientContext): void
+    {
+        this.clients.add(c);
+        this.registerEndpoint(c);
+    }
+
+    /** Assign a local endpoint number and start routing messages to the endpoint */
+    registerEndpoint(c: Endpoint): void
     {
         const a = new Uint32Array(1);
         do
@@ -94,9 +102,10 @@ export class RobotRaconteurNode
         this.endpoints.set(c.localEndpoint, c);
     }
 
-    deleteEndpoint(c: ClientContext): void
+    deleteEndpoint(c: Endpoint): void
     {
         this.endpoints.delete(c.localEndpoint);
+        this.clients.delete(c as ClientContext);
     }
 
     messageReceived(m: Message): void

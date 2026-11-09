@@ -40,4 +40,4 @@ export type {
     UsingDefinition
 } from "./ServiceDefinition.js";
 export { parseConnectionUrl } from "./Transport.js";
-export type { ITransportConnection, ParsedConnectionUrl, Transport } from "./Transport.js";
+export type { Endpoint, ITransportConnection, ParsedConnectionUrl, Transport } from "./Transport.js";
