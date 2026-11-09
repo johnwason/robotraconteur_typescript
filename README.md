@@ -10,48 +10,121 @@ Build from this repository with `npm install` and `npm run build`. The package i
 
 ## Usage
 
+The examples below use two services designed for learning Robot Raconteur. Examples are written as ES modules with top level `await`.
+
+Service definitions are pulled from the service when connecting, and all values are converted using them. Pass a user name and credentials as the second and third arguments of `connectService` if the service requires them, with credentials as a map of `VarValue`, for example `new Map([["password", new VarValue("secret", "string")]])`.
+
+### Reynard the Robot
+
+[Reynard the Robot](https://github.com/robotraconteur/reynard-the-robot) is a cartoon robot with a planar base and a three joint arm. Install and start it with `python -m pip install reynard-the-robot` and `python -m reynard_the_robot`, then open `http://localhost:29201` to watch it move.
+
 ```ts
-import { BrowserWebSocketTransport, RobotRaconteurNode, VarValue } from "robotraconteur";
+import { BrowserWebSocketTransport, RobotRaconteurNode } from "robotraconteur";
 
 const node = new RobotRaconteurNode();
 node.registerTransport(new BrowserWebSocketTransport(node));
 
-const robot = await node.connectService("rr+ws://localhost:22222?service=my_robot");
+const reynard = await node.connectService("rr+ws://localhost:29200?service=reynard");
 
-await robot.setProperty("speed", 1.5);
-const speed = await robot.getProperty("speed");
+// Read the current state using a wire peek
+const { value: state, timestamp } = await reynard.peekWireInValue("state");
+console.log(state, timestamp);
 
-const result = await robot.callFunction("add", [1.0, 2.0]);
-const same = await robot.callFunction("add", { a: 1.0, b: 2.0 });
+// Parameters are given in declaration order
+await reynard.callFunction("teleport", [0.1, -0.2]);
 
-const arm = await robot.getObjRef("arms", 0);
+// Drive for one second, then stop
+await reynard.callFunction("drive_robot", [0.5, -0.2, -1, false]);
+await new Promise((resolve) => setTimeout(resolve, 1000));
+await reynard.callFunction("drive_robot", [0, 0, -1, false]);
 
-const { value, timestamp } = await robot.peekWireInValue("position");
-await robot.pokeWireOutValue("command", new Float64Array([0, 0, 1]));
+// Parameters can also be given by name
+const deg = (d: number) => (d * Math.PI) / 180;
+await reynard.callFunction("drive_arm", { q1: deg(10), q2: deg(-30), q3: deg(-15), timeout: 1.5, wait: true });
+
+// Properties
+await reynard.setProperty("color", [1, 0, 0]);
+console.log(await reynard.getProperty("color"));
+await reynard.setProperty("color", [0.929, 0.49, 0.192]);
+
+await reynard.callFunction("say", ["Hello, World From Robot Raconteur!"]);
+
+await node.disconnectService(reynard);
+```
+
+### UR5e robot in the training simulator
+
+The [Robot Raconteur Training Simulator](https://github.com/robotraconteur-contrib/robotraconteur_training_sim) provides simulated robots that use the standard `com.robotraconteur.robotics.robot.Robot` type. See its documentation to install and start the UR5e scene. The first UR5e is at port 52511. In the Multi Robot scene the same port is a UR5e, and ports 52512 and 52513 are the ABB and Sawyer robots.
+
+This example moves one joint using `jog_freespace`, then runs a trajectory using a generator. Enum values are read from the pulled service definition.
+
+```ts
+import { BrowserWebSocketTransport, RobotRaconteurNode } from "robotraconteur";
+
+const node = new RobotRaconteurNode();
+node.registerTransport(new BrowserWebSocketTransport(node));
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const robot = await node.connectService("rr+ws://localhost:52511?service=robot");
+
+const robot_def = robot.context.types.defs.get("com.robotraconteur.robotics.robot")!;
+const modes = robot_def.enums.find((e) => e.name === "RobotCommandMode")!.values;
+const mode = (name: string) => modes.find((v) => v.name === name)!.value;
+
+// Get the joint names and current joint positions
+const robot_info: any = await robot.getProperty("robot_info");
+const joint_names = robot_info.joint_info.map((j: any) => j.joint_identifier.name);
+const state: any = (await robot.peekWireInValue("robot_state")).value;
+const start: Float64Array = state.joint_position;
+
+// The robot must pass through halt to change command modes
+await robot.setProperty("command_mode", mode("halt"));
+await sleep(100);
+await robot.setProperty("command_mode", mode("jog"));
+
+// Jog the first joint in a sine wave for five seconds
+for (let i = 0; i < 50; i++) {
+    const target = start.map((q, j) => (j === 0 ? q + 0.2 * Math.sin(i / 10) : q));
+    await robot.callFunction("jog_freespace", [target, new Float64Array(start.length).fill(1), true]);
+    await sleep(100);
+}
+
+// Build a trajectory that returns to the starting position
+await robot.setProperty("command_mode", mode("halt"));
+await sleep(100);
+await robot.setProperty("command_mode", mode("trajectory"));
+
+const current: any = (await robot.peekWireInValue("robot_state")).value;
+const waypoints = [
+    { time_from_start: 0, joint_position: current.joint_position },
+    { time_from_start: 5, joint_position: start }
+].map((w) => ({
+    ...w,
+    joint_velocity: [],
+    position_tolerance: [],
+    velocity_tolerance: [],
+    interpolation_mode: 0,
+    waypoint_type: 0
+}));
+const trajectory = { joint_names, joint_units: null, waypoints, extended: null };
+
+// Generator functions return a handle. The end is reported as an error with isStopIteration set
+const gen: any = await robot.callFunction("execute_trajectory", [trajectory]);
+try {
+    for (;;) {
+        const status: any = await robot.callFunctionGenNext(gen);
+        console.log(status.action_status, status.trajectory_time);
+    }
+} catch (e: any) {
+    if (!e.isStopIteration) throw e;
+}
 
 await node.disconnectService(robot);
 ```
 
-The service definitions are pulled from the service when connecting, and all values are converted using them.
+`callFunctionGenClose(handle)` finishes a generator early and `callFunctionGenAbort(handle)` aborts its operation. Object references are accessed with `getObjRef(name, index)`, which returns a client for the referenced object with the same functions.
 
-Pass a user name and credentials as the second and third arguments of `connectService`. Credentials are a map of `VarValue`, for example `new Map([["password", new VarValue("secret", "string")]])`.
-
-### Generators
-
-`callFunction` returns a `GeneratorHandle` for generator functions. The end of a generator is reported as an error with `isStopIteration` set, as in the other Robot Raconteur implementations.
-
-```ts
-const gen = await robot.callFunction("read_samples");
-try {
-    for (;;) {
-        console.log(await robot.callFunctionGenNext(gen));
-    }
-} catch (e) {
-    if (!e.isStopIteration) throw e;
-}
-```
-
-`callFunctionGenClose(handle)` finishes a generator early and `callFunctionGenAbort(handle)` aborts its operation.
+Clients in a browser page must be allowed by the service. See [Limitations](#limitations).
 
 ### Value types
 
@@ -108,7 +181,7 @@ Run `npm run size` to regenerate these numbers.
 * Client only, using Message Format Version 2. Message Version 4 is not offered during connection.
 * Only `rr+ws` and `rr+wss` connections through the WebSocket class. `tcp` and `rr+tcp` URLs are converted to WebSocket connections, matching RobotRaconteurWeb.
 * Pipes, events, callbacks, memories, wire connections, object locks, discovery, and `rrs+` end-to-end encryption are not implemented. Incoming callback requests are answered with a not-implemented error.
-* Services must allow the origin of the page. Pages loaded from `file://` and `robotraconteur.com` are allowed by default. Use `--robotraconteur-tcp-ws-add-origins` or `AddWebSocketAllowedOrigin` on the service for other origins.
+* Browsers send the origin of the page, and services must allow it. Pages loaded from `file://` and `robotraconteur.com` are allowed by default. Other origins, including `http://localhost`, must be added on the service with `AddWebSocketAllowedOrigin` or a command line option, for example `python -m reynard_the_robot --robotraconteur-tcp-ws-add-origins=http://localhost:8000`. Node.js clients do not send an origin.
 * Assumes a little-endian host, which covers browser platforms.
 
 ## Development
