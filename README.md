@@ -113,6 +113,8 @@ Run `npm run size` to regenerate these numbers.
 
 ## Development
 
+[GitHub Actions](.github/workflows/main.yml) builds the package and runs the complete test suite on every push and pull request.
+
 Development and tests run in a container with Node.js, Chromium, and the Python Robot Raconteur package:
 
 ```sh

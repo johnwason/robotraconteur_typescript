@@ -4,3 +4,4 @@ dist-test/
 *.tsbuildinfo
 *.log
 .DS_Store
+*.tgz
