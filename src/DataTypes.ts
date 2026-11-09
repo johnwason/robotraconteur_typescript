@@ -87,6 +87,7 @@ export const enum MessageEntryType
     GeneratorNextRes,
     CallbackCallReq = 1151,
     CallbackCallRet,
+    WirePacket = 1161,
     WirePeekInValueReq = 1181,
     WirePeekInValueRet,
     WirePeekOutValueReq,

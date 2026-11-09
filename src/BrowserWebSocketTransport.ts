@@ -24,9 +24,239 @@ const WEBSOCKET_PROTOCOL = "robotraconteur.robotraconteur.com";
 /** The Robot Raconteur TCP Transport standard limits WebSocket frames to 64 KB */
 const MAX_FRAME_SIZE = 65536;
 
+const OPEN = 1;
+const POLL_PERIOD_MS = 5;
+
 function connectionError(message: string): RobotRaconteurError
 {
     return new RobotRaconteurError(MessageErrorType.ConnectionError, "RobotRaconteur.ConnectionError", message);
+}
+
+/**
+ * A connected socket. write() returns a promise when the caller must wait before writing more, so
+ * that nothing is delayed while the socket has room.
+ */
+export interface SocketAdapter
+{
+    write(frame: Uint8Array): Promise<void> | void;
+    close(): void;
+}
+
+interface SocketEvents
+{
+    onData(frame: Uint8Array): void;
+    onClose(): void;
+}
+
+interface WebSocketLike
+{
+    readonly bufferedAmount: number;
+    readonly readyState: number;
+    send(data: Uint8Array): void;
+    close(): void;
+}
+
+/** The WebSocket class has no notification that its send buffer has drained, so it must be polled */
+export class ClassicWebSocketAdapter implements SocketAdapter
+{
+    constructor(private ws: WebSocketLike, private high_water_mark: number, private low_water_mark: number) {}
+
+    write(frame: Uint8Array): Promise<void> | void
+    {
+        this.ws.send(frame);
+        if (this.ws.bufferedAmount > this.high_water_mark) return this.drain();
+    }
+
+    private async drain(): Promise<void>
+    {
+        while (this.ws.bufferedAmount > this.low_water_mark)
+        {
+            if (this.ws.readyState !== OPEN) throw connectionError("Transport connection closed");
+            await new Promise((resolve) => setTimeout(resolve, POLL_PERIOD_MS));
+        }
+    }
+
+    close(): void
+    {
+        this.ws.close();
+    }
+}
+
+function openClassicWebSocket(url: string, timeout: number, high: number, low: number, events: SocketEvents): Promise<SocketAdapter>
+{
+    return new Promise<SocketAdapter>((resolve, reject) =>
+    {
+        const ws = new WebSocket(url, WEBSOCKET_PROTOCOL);
+        ws.binaryType = "arraybuffer";
+        const timer = setTimeout(() =>
+        {
+            ws.close();
+            reject(connectionError("Timed out connecting to WebSocket"));
+        }, timeout);
+
+        ws.onopen = () =>
+        {
+            clearTimeout(timer);
+            ws.onmessage = (ev) => events.onData(new Uint8Array(ev.data as ArrayBuffer));
+            ws.onclose = () => events.onClose();
+            ws.onerror = () => events.onClose();
+            resolve(new ClassicWebSocketAdapter(ws as unknown as WebSocketLike, high, low));
+        };
+        ws.onerror = () =>
+        {
+            clearTimeout(timer);
+            reject(connectionError("Could not connect to WebSocket"));
+        };
+    });
+}
+
+// WebSocketStream is not yet in the TypeScript DOM library
+interface WebSocketStreamConnection
+{
+    readable: ReadableStream<ArrayBuffer | Uint8Array | string>;
+    writable: WritableStream<Uint8Array>;
+}
+
+interface WebSocketStreamInstance
+{
+    opened: Promise<WebSocketStreamConnection>;
+    closed: Promise<unknown>;
+    close(): void;
+}
+
+type WebSocketStreamConstructor = new (url: string, options: { protocols: string[]; signal: AbortSignal }) => WebSocketStreamInstance;
+
+function webSocketStreamConstructor(): WebSocketStreamConstructor | undefined
+{
+    return (globalThis as unknown as { WebSocketStream?: WebSocketStreamConstructor }).WebSocketStream;
+}
+
+/** WebSocketStream applies backpressure in both directions, which WebSocket cannot do for receiving */
+async function openWebSocketStream(ctor: WebSocketStreamConstructor, url: string, timeout: number, events: SocketEvents): Promise<SocketAdapter>
+{
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), timeout);
+    const wss = new ctor(url, { protocols: [WEBSOCKET_PROTOCOL], signal: abort.signal });
+    wss.closed.catch(() => undefined);
+
+    let connection: WebSocketStreamConnection;
+    try
+    {
+        connection = await wss.opened;
+    }
+    catch
+    {
+        throw connectionError("Could not connect to WebSocket");
+    }
+    finally
+    {
+        clearTimeout(timer);
+    }
+
+    const writer = connection.writable.getWriter();
+    const reader = connection.readable.getReader();
+
+    // Messages are only parsed and handed off here, so that reading never waits on application
+    // code. Replies and heartbeats share this connection and must keep flowing.
+    void (async () =>
+    {
+        try
+        {
+            for (;;)
+            {
+                const { value, done } = await reader.read();
+                if (done) break;
+                if (typeof value === "string") break;
+                events.onData(value instanceof Uint8Array ? value : new Uint8Array(value));
+            }
+        }
+        catch
+        {
+            // Reported as a close below
+        }
+        events.onClose();
+    })();
+
+    return {
+        write: (frame) => writer.write(frame),
+        close: () => wss.close()
+    };
+}
+
+interface QueuedMessage
+{
+    data: Uint8Array;
+    /** Set for wire packets. A newer packet for the same wire replaces a queued one */
+    wire_key?: string;
+    connection_test: boolean;
+}
+
+/**
+ * Sends one message at a time, waiting whenever the socket reports it is full. As in Core, stale
+ * wire packets and duplicate connection tests are discarded instead of accumulating.
+ */
+export class SendQueue
+{
+    private queue: QueuedMessage[] = [];
+    private pumping = false;
+    private stopped = false;
+
+    constructor(private write: (frame: Uint8Array) => Promise<void> | void, private on_send: () => void, private on_error: () => void) {}
+
+    enqueue(m: QueuedMessage): void
+    {
+        if (m.connection_test && this.queue.some((x) => x.connection_test)) return;
+        if (m.wire_key !== undefined)
+        {
+            const i = this.queue.findIndex((x) => x.wire_key === m.wire_key);
+            if (i >= 0)
+            {
+                this.queue[i] = m;
+                return;
+            }
+        }
+        this.queue.push(m);
+        void this.pump();
+    }
+
+    get length(): number
+    {
+        return this.queue.length;
+    }
+
+    stop(): void
+    {
+        this.stopped = true;
+        this.queue.length = 0;
+    }
+
+    private async pump(): Promise<void>
+    {
+        if (this.pumping) return;
+        this.pumping = true;
+        try
+        {
+            while (this.queue.length > 0 && !this.stopped)
+            {
+                const { data } = this.queue.shift()!;
+                this.on_send();
+                for (let pos = 0; pos < data.length && !this.stopped; pos += MAX_FRAME_SIZE)
+                {
+                    const wait = this.write(data.subarray(pos, Math.min(pos + MAX_FRAME_SIZE, data.length)));
+                    if (wait) await wait;
+                }
+            }
+        }
+        catch
+        {
+            this.stop();
+            this.on_error();
+        }
+        finally
+        {
+            this.pumping = false;
+        }
+    }
 }
 
 /** Client transport using the WebSocket class available in browsers and recent Node.js */
@@ -38,6 +268,12 @@ export class BrowserWebSocketTransport implements Transport
     defaultReceiveTimeout = 15000;
     defaultConnectTimeout = 2500;
     maxMessageSize = 12 * 1024 * 1024;
+    /** Use WebSocketStream where the browser provides it. If false, always use WebSocket */
+    useWebSocketStream = true;
+    /** When using WebSocket, stop sending when this many bytes are buffered */
+    sendHighWaterMark = 256 * 1024;
+    /** When using WebSocket, resume sending when no more than this many bytes are buffered */
+    sendLowWaterMark = 64 * 1024;
 
     private connections = new Set<BrowserWebSocketClientTransport>();
 
@@ -78,7 +314,8 @@ class BrowserWebSocketClientTransport implements ITransportConnection
     remoteNodeID = NodeID.Any;
     useCombinedConnection = false;
 
-    private ws!: WebSocket;
+    private socket!: SocketAdapter;
+    private send_queue!: SendQueue;
     private connected = false;
     private readonly target_nodeid: NodeID;
     private readonly target_nodename: string;
@@ -106,33 +343,21 @@ class BrowserWebSocketClientTransport implements ITransportConnection
         const scheme = u.scheme.endsWith("wss") ? "wss" : "ws";
         const ws_url = this.url.replace(u.scheme + "://", scheme + "://");
 
-        await new Promise<void>((resolve, reject) =>
+        const events: SocketEvents = {
+            onData: (frame) => this.dataReceived(frame),
+            onClose: () => this.close()
+        };
+        const p = this.parent;
+        const stream_ctor = p.useWebSocketStream ? webSocketStreamConstructor() : undefined;
+        this.socket = stream_ctor
+            ? await openWebSocketStream(stream_ctor, ws_url, p.defaultConnectTimeout, events)
+            : await openClassicWebSocket(ws_url, p.defaultConnectTimeout, p.sendHighWaterMark, p.sendLowWaterMark, events);
+
+        this.send_queue = new SendQueue((frame) => this.socket.write(frame), () =>
         {
-            const ws = new WebSocket(ws_url, WEBSOCKET_PROTOCOL);
-            ws.binaryType = "arraybuffer";
-            const timer = setTimeout(() =>
-            {
-                ws.close();
-                reject(connectionError("Timed out connecting to WebSocket"));
-            }, this.parent.defaultConnectTimeout);
-
-            ws.onopen = () =>
-            {
-                clearTimeout(timer);
-                this.ws = ws;
-                resolve();
-            };
-            ws.onerror = () =>
-            {
-                clearTimeout(timer);
-                reject(connectionError("Could not connect to WebSocket"));
-            };
-        });
-
+            this.tlastsend = Date.now();
+        }, () => this.close());
         this.connected = true;
-        this.ws.onmessage = (ev) => this.dataReceived(new Uint8Array(ev.data as ArrayBuffer));
-        this.ws.onclose = () => this.close();
-        this.ws.onerror = () => this.close();
 
         try
         {
@@ -307,11 +532,14 @@ class BrowserWebSocketClientTransport implements ITransportConnection
         if (!this.connected) throw connectionError("Transport connection closed");
         const data = serializeMessage(m);
         if (data.length > this.parent.maxMessageSize - 100) throw new RobotRaconteurError(MessageErrorType.ProtocolError, "RobotRaconteur.ProtocolError", "Message larger than maximum message size");
-        this.tlastsend = Date.now();
-        for (let pos = 0; pos < data.length; pos += MAX_FRAME_SIZE)
-        {
-            this.ws.send(data.subarray(pos, Math.min(pos + MAX_FRAME_SIZE, data.length)));
-        }
+
+        // The message is serialized now so that later changes to the caller's arrays cannot affect it
+        const entry = m.entries.length === 1 ? m.entries[0]! : undefined;
+        this.send_queue.enqueue({
+            data,
+            wire_key: entry?.entryType === MessageEntryType.WirePacket ? entry.servicePath + "\0" + entry.memberName : undefined,
+            connection_test: entry?.entryType === MessageEntryType.ConnectionTest
+        });
     }
 
     private doHeartbeat(): void
@@ -348,9 +576,10 @@ class BrowserWebSocketClientTransport implements ITransportConnection
         this.streamop_wait = null;
         w?.reject(connectionError("Transport connection closed"));
 
+        this.send_queue.stop();
         try
         {
-            this.ws.close();
+            this.socket.close();
         }
         catch
         {

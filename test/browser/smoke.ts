@@ -23,11 +23,30 @@ interface Outcome
     error?: string;
 }
 
-async function runAll(port: number): Promise<Outcome[]>
+function countConstructions(name: string): () => number
 {
+    const g = globalThis as unknown as Record<string, new (...args: unknown[]) => object>;
+    let count = 0;
+    g[name] = new Proxy(g[name]!, {
+        construct(target, args, new_target)
+        {
+            count++;
+            return Reflect.construct(target, args, new_target);
+        }
+    });
+    return () => count;
+}
+
+async function runAll(port: number, use_stream: boolean): Promise<{ outcomes: Outcome[]; streams: number; sockets: number }>
+{
+    const streams = countConstructions("WebSocketStream");
+    const sockets = countConstructions("WebSocket");
+
     const node = new RobotRaconteurNode();
     node.requestTimeout = 30000;
-    node.registerTransport(new BrowserWebSocketTransport(node));
+    const transport = new BrowserWebSocketTransport(node);
+    transport.useWebSocketStream = use_stream;
+    node.registerTransport(transport);
     const vectors = (globalThis as unknown as { rr_vectors: Vectors }).rr_vectors;
 
     const out: Outcome[] = [];
@@ -44,7 +63,7 @@ async function runAll(port: number): Promise<Outcome[]>
         }
     }
     await node.shutdown();
-    return out;
+    return { outcomes: out, streams: streams(), sockets: sockets() };
 }
 
 (globalThis as unknown as { runAll: typeof runAll }).runAll = runAll;

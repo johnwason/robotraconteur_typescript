@@ -149,11 +149,15 @@ The result is plain JSON described by [service-definition.schema.json](service-d
 
 | Bundle | Minified | Gzipped |
 | --- | --- | --- |
-| Client | 44.6 KB | 13.8 KB |
+| Client | 46.8 KB | 14.6 KB |
 | Parser only | 7.2 KB | 2.7 KB |
 | Validators | 8.6 KB | 3.1 KB |
 
 Run `npm run size` to regenerate these numbers.
+
+## Flow control
+
+Sending never builds up an unbounded backlog of stale data: one message is sent at a time, and a newer wire packet replaces one still waiting, as in the other Robot Raconteur implementations. Where the browser provides `WebSocketStream`, currently Chromium based browsers, it is used to apply backpressure in both directions. Elsewhere, including Node.js, the library falls back to `WebSocket` and polls how much data is waiting to be sent. `WebSocket` cannot slow down incoming data, so with the fallback a page that cannot keep up will buffer received messages in the browser. Set `useWebSocketStream` to `false` on the transport to always use `WebSocket`.
 
 ## Limitations
 

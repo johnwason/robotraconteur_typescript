@@ -67,29 +67,38 @@ test("Node.js client tests", { timeout: 300000 }, async (t) =>
     }
 });
 
-test("Chromium client tests", { timeout: 300000 }, async (t) =>
+for (const use_stream of [true, false])
 {
-    const { chromium } = await import("playwright");
-    const browser = await chromium.launch({ args: ["--no-sandbox"] });
-    try
+    test(`Chromium client tests using ${use_stream ? "WebSocketStream" : "WebSocket"}`, { timeout: 300000 }, async (t) =>
     {
-        const page = await browser.newPage();
-        await page.goto("file://" + join(root, "dist-test/browser/index.html"));
-        const outcomes = (await page.evaluate((p) => (globalThis as unknown as { runAll: (port: number) => Promise<unknown> }).runAll(p), port)) as { name: string; error?: string }[];
-        assert.equal(outcomes.length, clientTests(node, port, vectors).length);
-        for (const o of outcomes)
+        const { chromium } = await import("playwright");
+        const browser = await chromium.launch({ args: ["--no-sandbox"] });
+        try
         {
-            await t.test(o.name, () =>
+            const page = await browser.newPage();
+            await page.goto("file://" + join(root, "dist-test/browser/index.html"));
+            type Result = { outcomes: { name: string; error?: string }[]; streams: number; sockets: number };
+            const result = (await page.evaluate(([p, s]) => (globalThis as unknown as { runAll: (port: unknown, stream: unknown) => Promise<unknown> }).runAll(p, s), [port, use_stream] as const)) as Result;
+
+            // Confirm that the intended browser API carried the connections
+            assert.ok((use_stream ? result.streams : result.sockets) > 0, "expected API was not used");
+            assert.equal(use_stream ? result.sockets : result.streams, 0, "other API was used");
+
+            assert.equal(result.outcomes.length, clientTests(node, port, vectors).length);
+            for (const o of result.outcomes)
             {
-                if (o.error) throw new Error(o.error);
-            });
+                await t.test(o.name, () =>
+                {
+                    if (o.error) throw new Error(o.error);
+                });
+            }
         }
-    }
-    finally
-    {
-        await browser.close();
-    }
-});
+        finally
+        {
+            await browser.close();
+        }
+    });
+}
 
 test("messages are byte compatible with the Core library", { timeout: 120000 }, () =>
 {
