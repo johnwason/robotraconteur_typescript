@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/figures/logo-header.svg"></p>
+
 # Robot Raconteur TypeScript
 
 A small, dependency-free TypeScript client for [Robot Raconteur](https://github.com/robotraconteur/robotraconteur) that runs in the browser and communicates over WebSockets.
