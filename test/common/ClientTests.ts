@@ -321,6 +321,8 @@ export function clientTests(node: RobotRaconteurNode, port: number, vectors: Vec
     add("ServiceTestClient2 TestEnums", withClient(S2, client2.TestEnums));
     add("ServiceTestClient2 TestPods", withClient(S2, client2.TestPods));
     add("ServiceTestClient2 TestGenerators", withClient(S2, client2.TestGenerators));
+    add("ServiceTestClient2 TestGeneratorIteration", withClient(S2, client2.TestGeneratorIteration));
+    add("ServiceTestClient2 TestConstants", withClient(S2, client2.TestConstants));
     add("ServiceTestClient2 TestNamedArrays", withClient(S2, client2.TestNamedArrays));
     add("ServiceTestClient2 TestComplex", withClient(S2, generated.TestComplex));
     add("ServiceTestClient2 TestNoLock", withClient(S2, client2.TestNoLock));

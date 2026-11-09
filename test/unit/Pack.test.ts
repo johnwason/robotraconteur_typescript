@@ -20,6 +20,8 @@ import { RobotRaconteurError } from "../../src/Error.js";
 import { deserializeMessage, Message, MessageEntry, serializeMessage } from "../../src/Message.js";
 import { packElement, TypeContext, unpackElement, VarValue } from "../../src/Pack.js";
 import { parseServiceDefinition, parseTypeDefinition, ServiceDefinition } from "../../src/ServiceDefinition.js";
+import { newStructure } from "../../src/ServiceTypes.js";
+import type { ServiceStub } from "../../src/Client.js";
 
 const def = parseServiceDefinition(`service test.pack
 stdver 0.10
@@ -364,4 +366,61 @@ test("values that cannot be represented are rejected rather than altered", () =>
     rejects("inner[]", { i: 1 });
     rejects("inner", { i: 1.5 });
     rejects("st", 5);
+});
+
+const stub = { context: { types: ctx, serviceDefForType: () => def }, objectType: "test.pack.o" } as unknown as ServiceStub;
+
+test("newStructure fills in defaults that can be sent", () =>
+{
+    const s = newStructure(stub, "st");
+    assert.deepEqual(s, { d: 0, s: "", a: new Float64Array(0), child: null, l: null, m: null, mi: null, v: null });
+    roundTrip("st", s);
+
+    const full = newStructure(stub, "test.pack.st");
+    full["s"] = "changed";
+    roundTrip("st", full);
+});
+
+test("newStructure creates zeroed pods and named arrays", () =>
+{
+    const p = newStructure(stub, "pose");
+    assert.deepEqual(p, { p: { x: 0, y: 0 }, q: new Float64Array(2), r: [{ x: 0, y: 0 }, { x: 0, y: 0 }] });
+    roundTrip("pose", p);
+
+    const o = newStructure(stub, "outer");
+    assert.equal(o["d"], 0);
+    assert.deepEqual(o["m"], { dims: Uint32Array.of(2, 2), array: new Float64Array(4) });
+    assert.deepEqual(o["s"], { i: 0 });
+    assert.equal((o["sa"] as unknown[]).length, 2);
+    packElement("v", parseTypeDefinition("outer"), o, def, ctx);
+});
+
+test("newStructure rejects other types", () =>
+{
+    assert.throws(() => newStructure(stub, "e1"), /is not a structure/);
+    assert.throws(() => newStructure(stub, "nothing"), /Unknown type/);
+});
+
+test("packing errors say which field of which type", () =>
+{
+    const st = parseTypeDefinition("st");
+    const inner = { ...newStructure(stub, "st"), s: undefined };
+    assert.throws(() => packElement("v", st, inner, def, ctx), /^RobotRaconteurError: Expected string for s \(in st\.s\)$/);
+
+    const outer = { ...newStructure(stub, "st"), child: inner };
+    assert.throws(() => packElement("v", st, outer, def, ctx), /Expected string for s \(in st\.child > st\.s\)$/);
+
+    const e = (() =>
+    {
+        try
+        {
+            packElement("v", st, inner, def, ctx);
+        }
+        catch (x)
+        {
+            return x as RobotRaconteurError;
+        }
+        return undefined;
+    })();
+    assert.equal(e?.errorName, "RobotRaconteur.DataTypeError");
 });

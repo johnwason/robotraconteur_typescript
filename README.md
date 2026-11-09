@@ -58,13 +58,17 @@ The word `await` means "wait for the robot to answer", and it can only be used i
 | Read a wire's latest value | `(await robot.peekWireInValue("name")).value` |
 | Read a wire's output value | `(await robot.peekWireOutValue("name")).value` |
 | Set a wire's output value | `await robot.pokeWireOutValue("name", value)` |
-| Read from a generator | `await robot.callFunctionGenNext(handle)` |
+| Start a generator | `const gen = await robot.callGenerator("name", [first])` |
+| Read every value of a generator | `for await (const value of gen) { ... }` |
+| Read from a generator one step at a time | `await robot.callFunctionGenNext(handle)` |
 | Finish or abort a generator | `await robot.callFunctionGenClose(handle)` or `await robot.callFunctionGenAbort(handle)` |
 | Stream a wire | `const wire = await robot.connectWire("name")` |
 | Connect a pipe | `const pipe = await robot.connectPipe("name")` |
 | Listen for an event | `robot.addEventListener("name", (first, second) => { ... })` |
 | Stop listening | `robot.removeEventListener("name", handler)` |
 | Let the service call your code | `robot.setCallback("name", (first, second) => result)` |
+| Create a structure with default values | `RobotRaconteur.newStructure(robot, "type.name")` |
+| Get constants and enums | `RobotRaconteur.getConstants(robot, "service.definition.name")` |
 
 The names come from the service definition of the robot. Plain arrays of numbers such as `[1, 0, 0]` can be used anywhere an array is expected.
 
@@ -234,8 +238,8 @@ The result is plain JSON described by [service-definition.schema.json](service-d
 
 | Bundle | Minified | Gzipped |
 | --- | --- | --- |
-| Client, as in `robotraconteur.min.js` | 73.5 KB | 21.1 KB |
-| Client without subscriptions, when bundled and unused | 62.0 KB | 18.4 KB |
+| Client, as in `robotraconteur.min.js` | 76.6 KB | 22.1 KB |
+| Client without subscriptions, when bundled and unused | 62.9 KB | 18.7 KB |
 | Parser only | 7.2 KB | 2.7 KB |
 | Validators | 8.6 KB | 3.1 KB |
 

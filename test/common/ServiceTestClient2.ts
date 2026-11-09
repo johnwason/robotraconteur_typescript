@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { GeneratorHandle, parseTypeDefinition, RobotRaconteurError, ServiceStub, VarValue } from "../../src/index.js";
+import { GeneratorHandle, getConstants, parseTypeDefinition, RobotRaconteurError, ServiceStub, VarValue } from "../../src/index.js";
 import { packElement, unpackElement } from "../../src/Pack.js";
 import { assert } from "./check.js";
 import * as st from "./ServiceTest2.js";
@@ -115,6 +115,43 @@ export async function TestGenerators(r: ServiceStub): Promise<void>
 
     const g2_values = await nextAll(r, (await r.callFunction("gen_func2", ["gen_func2_a_param"])) as GeneratorHandle);
     assert.deepEqual(g2_values, range16.map((i) => Uint8Array.of(i)));
+}
+
+export async function TestGeneratorIteration(r: ServiceStub): Promise<void>
+{
+    const range16 = Array.from({ length: 16 }, (_, i) => i);
+    const values: number[] = [];
+    for await (const v of await r.callGenerator<number>("gen_func1")) values.push(v);
+    assert.deepEqual(values, range16);
+
+    // Leaving the loop early closes the generator
+    const g = await r.callGenerator<number>("gen_func1");
+    for await (const v of g)
+    {
+        if (v === 2) break;
+    }
+    await assert.rejects(r.callFunctionGenNext(g), (e: RobotRaconteurError) => e.isStopIteration);
+
+    await assert.rejects(r.callGenerator("test_exception_params1"), (e: RobotRaconteurError) => e.message.includes("is not a generator"));
+}
+
+export async function TestConstants(r: ServiceStub): Promise<void>
+{
+    const c = getConstants(r, T3);
+    assert.equal(c.testenum1.anothervalue, await r.getProperty("testenum1_prop"));
+    assert.ok(c.strconst.startsWith('This is a\n "string constant" \\/\b\f \r\u00FF tabme\ttabme\n smile! \u{1F601}'), c.strconst);
+    assert.equal(c.int32const, 3856384);
+    assert.equal(c.int32hexconst, 0x082bc7);
+    assert.equal(c.int32hexconst2, -0x7264c17);
+    assert.deepEqual(c.int32const_array, [182476, 56483, -2947]);
+    assert.deepEqual(c.int32hexconst_array, [0x8274ec, -1, 0xABCDEF, 0xabcdef, 0x012345, 0x6789]);
+    assert.deepEqual(c.doubleconst_array, [1.5847, 3.14, -548e3, 3452.67e2, 485e-21]);
+    assert.equal(c.structconst.field1, c.strconst);
+    assert.deepEqual(c.structconst.field2, c.int32const_array);
+    assert.equal(c.structconst2.field3, c.structconst);
+    assert.equal(c.structconst2.field4, c.int32const);
+    assert.equal(c.testroot3.unknown_modifier_hello, "hello world!");
+    await assert.rejects((async () => getConstants(r, "no.such.service"))(), (e: RobotRaconteurError) => e.message.includes("Could not find service definition"));
 }
 
 export async function TestNamedArrays(r: ServiceStub): Promise<void>

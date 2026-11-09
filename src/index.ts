@@ -25,6 +25,7 @@ export { NodeID } from "./NodeID.js";
 export { VarValue } from "./Pack.js";
 export type { MultiDimArray } from "./Pack.js";
 export { parseServiceDefinition, parseTypeDefinition, ServiceDefinitionParseError } from "./ServiceDefinition.js";
+export { getConstants, newStructure } from "./ServiceTypes.js";
 export type {
     ConstantDefinition,
     ContainerType,

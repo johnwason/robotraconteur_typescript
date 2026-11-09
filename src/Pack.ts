@@ -432,15 +432,31 @@ function flatPodFieldType(t: TypeDefinition): TypeDefinition
     return { ...t, array: "array", arrayLength: [t.arrayLength!.reduce((a, b) => a * b, 1)], arrayVarLength: false };
 }
 
+/** Say where in a value a packing error happened, since field names are often repeated between types */
+function withFieldPath(e: unknown, r: ResolvedType, field: string): unknown
+{
+    if (!(e instanceof RobotRaconteurError) || e.errorCode !== MessageErrorType.DataTypeError) return e;
+    const path = r.qualifiedName.substring(r.qualifiedName.lastIndexOf(".") + 1) + "." + field;
+    const inner = /^(.*) \(in (.*)\)$/s.exec(e.message);
+    return new RobotRaconteurError(e.errorCode, e.errorName, inner ? `${inner[1]} (in ${path} > ${inner[2]})` : `${e.message} (in ${path})`);
+}
+
 function packFields(v: Record<string, unknown>, r: ResolvedType, ctx: TypeContext): MessageElement[]
 {
     if (typeof v !== "object" || isArrayValue(v)) throw dataError("Expected object for " + r.qualifiedName);
     return r.entry!.members.map((m) =>
     {
         const t = m.type!;
-        // Fixed multidimensional pod fields are sent flattened since the dimensions are known
-        if (r.kind !== "pod" || t.array !== "multidimarray") return packElement(m.name, t, v[m.name], r.def, ctx);
-        return packElement(m.name, flatPodFieldType(t), toMultiDim(v[m.name], t, m.name).array, r.def, ctx);
+        try
+        {
+            // Fixed multidimensional pod fields are sent flattened since the dimensions are known
+            if (r.kind !== "pod" || t.array !== "multidimarray") return packElement(m.name, t, v[m.name], r.def, ctx);
+            return packElement(m.name, flatPodFieldType(t), toMultiDim(v[m.name], t, m.name).array, r.def, ctx);
+        }
+        catch (e)
+        {
+            throw withFieldPath(e, r, m.name);
+        }
     });
 }
 

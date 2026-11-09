@@ -36,10 +36,44 @@ interface PendingRequest
 export type EventHandler = (...args: any[]) => unknown;
 export type CallbackHandler = (...args: any[]) => unknown;
 
-/** Handle for a generator returned by callFunction */
-export class GeneratorHandle
+/**
+ * Handle for a generator returned by callFunction or callGenerator. It can be used with for await
+ * if the generator does not take a value at each step. Leaving the loop early closes the generator.
+ */
+export class GeneratorHandle<T = unknown> implements AsyncIterable<T, void, unknown>
 {
-    constructor(readonly memberName: string, readonly index: number, readonly returnType: TypeDefinition | undefined, readonly paramType: TypeDefinition | undefined) {}
+    constructor(readonly memberName: string, readonly index: number, readonly returnType: TypeDefinition | undefined, readonly paramType: TypeDefinition | undefined, private stub?: ServiceStub) {}
+
+    [Symbol.asyncIterator](): AsyncIterator<T, void, unknown>
+    {
+        const stub = this.stub!;
+        let done = false;
+        return {
+            next: async (param?: unknown): Promise<IteratorResult<T, void>> =>
+            {
+                if (done) return { done: true, value: undefined };
+                try
+                {
+                    return { done: false, value: await stub.callFunctionGenNext(this, param) as T };
+                }
+                catch (e)
+                {
+                    done = true;
+                    if (e instanceof RobotRaconteurError && e.isStopIteration) return { done: true, value: undefined };
+                    throw e;
+                }
+            },
+            return: async (): Promise<IteratorResult<T, void>> =>
+            {
+                if (!done)
+                {
+                    done = true;
+                    await stub.callFunctionGenClose(this);
+                }
+                return { done: true, value: undefined };
+            }
+        };
+    }
 }
 
 function error(code: MessageErrorType, name: string, message: string): RobotRaconteurError
@@ -180,10 +214,21 @@ export class ServiceStub
         if (is_gen)
         {
             const index = (getElement(ret.elements, "index").data as Int32Array)[0]!;
-            return new GeneratorHandle(name, index, itemType(m.type), isGeneratorType(last?.type) ? itemType(last!.type) : undefined);
+            return new GeneratorHandle(name, index, itemType(m.type), isGeneratorType(last?.type) ? itemType(last!.type) : undefined, this);
         }
         if (m.type!.type === "void") return undefined;
         return this.unpack(getElement(ret.elements, "return"), m.type!);
+    }
+
+    /** Call a generator function. T is the type of the values it produces */
+    async callGenerator<T = unknown>(name: string, params?: unknown[] | Record<string, unknown>): Promise<GeneratorHandle<T>>
+    {
+        const m = this.member(name, "function");
+        if (!isGeneratorType(m.type) && !isGeneratorType(m.parameters![m.parameters!.length - 1]?.type))
+        {
+            throw error(MessageErrorType.InvalidOperation, "InvalidOperation", `Function "${name}" is not a generator`);
+        }
+        return await this.callFunction(name, params) as GeneratorHandle<T>;
     }
 
     private generatorRequest(handle: GeneratorHandle, err: MessageErrorType, error_name: string): Promise<MessageEntry>
