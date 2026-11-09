@@ -1,0 +1,85 @@
+<!doctype html>
+<!--
+    Controls Reynard the Robot from a web page. No build tools are needed.
+
+    1. Start Reynard:         python -m reynard_the_robot
+    2. Watch Reynard move:    open http://localhost:29201 in a browser
+    3. Open this file:        double click reynard.html
+-->
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Reynard the Robot Client</title>
+</head>
+<body>
+    <h1>Reynard the Robot Client</h1>
+    <button onclick="run(connect)">Connect</button>
+    <button onclick="run(readState)">Read state</button>
+    <button onclick="run(driveForward)">Drive for one second</button>
+    <button onclick="run(moveArm)">Move arm</button>
+    <button onclick="run(makeRed)">Make red</button>
+    <button onclick="run(sayHello)">Say hello</button>
+    <pre id="output"></pre>
+
+    <!-- The Robot Raconteur library -->
+    <script src="robotraconteur.min.js"></script>
+
+    <script>
+        const url = "rr+ws://localhost:29200?service=reynard";
+
+        // Create the node and connect it to WebSockets once for the whole page
+        const node = new RobotRaconteur.RobotRaconteurNode();
+        node.registerTransport(new RobotRaconteur.BrowserWebSocketTransport(node));
+
+        // Holds the connection to the robot after Connect is pressed
+        let reynard = null;
+
+        async function connect() {
+            reynard = await node.connectService(url);
+            show("Connected");
+        }
+
+        async function readState() {
+            // Reads the latest value of the "state" wire
+            const result = await reynard.peekWireInValue("state");
+            show("Robot position: " + result.value.robot_position);
+            show("Arm position: " + result.value.arm_position);
+        }
+
+        async function driveForward() {
+            // drive_robot(vel_x, vel_y, timeout, wait)
+            await reynard.callFunction("drive_robot", [0.5, 0, 1, true]);
+            show("Finished driving");
+        }
+
+        async function moveArm() {
+            // The joint angles are in radians
+            await reynard.callFunction("setf_arm_position", [1.0, -0.5, -1.0]);
+            show("Moved arm");
+        }
+
+        async function makeRed() {
+            await reynard.setProperty("color", [1, 0, 0]);
+            show("Color is now " + await reynard.getProperty("color"));
+        }
+
+        async function sayHello() {
+            await reynard.callFunction("say", ["Hello from a web page!"]);
+            show("Said hello");
+        }
+
+        function show(text) {
+            document.getElementById("output").textContent += text + "\n";
+        }
+
+        // Runs one of the functions above and shows any error on the page
+        async function run(action) {
+            try {
+                await action();
+            } catch (error) {
+                show("Error: " + error.message);
+            }
+        }
+    </script>
+</body>
+</html>

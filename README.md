@@ -4,127 +4,106 @@ A small, dependency-free TypeScript client for [Robot Raconteur](https://github.
 
 **Status:** experimental. This is a minimal client. It does not yet cover the full Robot Raconteur feature set.
 
-## Installation
+## Quick start
 
-Build from this repository with `npm install` and `npm run build`. The package is written as ESM and has no runtime dependencies.
+You only need a web browser and Python. No Node.js or TypeScript is required.
 
-## Usage
+1. Install and start [Reynard the Robot](https://github.com/robotraconteur/reynard-the-robot), a cartoon robot made for learning Robot Raconteur:
 
-The examples below use two services designed for learning Robot Raconteur. Examples are written as ES modules with top level `await`.
+   ```
+   python -m pip install reynard-the-robot
+   python -m reynard_the_robot
+   ```
 
-Service definitions are pulled from the service when connecting, and all values are converted using them. Pass a user name and credentials as the second and third arguments of `connectService` if the service requires them, with credentials as a map of `VarValue`, for example `new Map([["password", new VarValue("secret", "string")]])`.
+2. Open `http://localhost:29201` in a browser to watch Reynard.
+3. Download this repository and double click [examples/reynard.html](examples/reynard.html). Press **Connect**, then try the other buttons.
 
-### Reynard the Robot
+## Using the library in a web page
 
-[Reynard the Robot](https://github.com/robotraconteur/reynard-the-robot) is a cartoon robot with a planar base and a three joint arm. Install and start it with `python -m pip install reynard-the-robot` and `python -m reynard_the_robot`, then open `http://localhost:29201` to watch it move.
+Copy [examples/robotraconteur.min.js](examples/robotraconteur.min.js) next to your HTML file and load it with a script tag. Everything is then available under the name `RobotRaconteur`.
 
-```ts
-import { BrowserWebSocketTransport, RobotRaconteurNode } from "robotraconteur";
+```html
+<script src="robotraconteur.min.js"></script>
+<script>
+    async function main() {
+        const node = new RobotRaconteur.RobotRaconteurNode();
+        node.registerTransport(new RobotRaconteur.BrowserWebSocketTransport(node));
 
-const node = new RobotRaconteurNode();
-node.registerTransport(new BrowserWebSocketTransport(node));
+        const reynard = await node.connectService("rr+ws://localhost:29200?service=reynard");
 
-const reynard = await node.connectService("rr+ws://localhost:29200?service=reynard");
+        await reynard.callFunction("say", ["Hello!"]);
+        console.log(await reynard.getProperty("color"));
 
-// Read the current state using a wire peek
-const { value: state, timestamp } = await reynard.peekWireInValue("state");
-console.log(state, timestamp);
+        await node.disconnectService(reynard);
+    }
 
-// Parameters are given in declaration order
-await reynard.callFunction("teleport", [0.1, -0.2]);
-
-// Drive for one second, then stop
-await reynard.callFunction("drive_robot", [0.5, -0.2, -1, false]);
-await new Promise((resolve) => setTimeout(resolve, 1000));
-await reynard.callFunction("drive_robot", [0, 0, -1, false]);
-
-// Parameters can also be given by name
-const deg = (d: number) => (d * Math.PI) / 180;
-await reynard.callFunction("drive_arm", { q1: deg(10), q2: deg(-30), q3: deg(-15), timeout: 1.5, wait: true });
-
-// Properties
-await reynard.setProperty("color", [1, 0, 0]);
-console.log(await reynard.getProperty("color"));
-await reynard.setProperty("color", [0.929, 0.49, 0.192]);
-
-await reynard.callFunction("say", ["Hello, World From Robot Raconteur!"]);
-
-await node.disconnectService(reynard);
+    main();
+</script>
 ```
 
-### UR5e robot in the training simulator
+Open the page by double clicking the file. If you put the page on a web server instead, see [Limitations](#limitations).
 
-The [Robot Raconteur Training Simulator](https://github.com/robotraconteur-contrib/robotraconteur_training_sim) provides simulated robots that use the standard `com.robotraconteur.robotics.robot.Robot` type. See its documentation to install and start the UR5e scene. The first UR5e is at port 52511. In the Multi Robot scene the same port is a UR5e, and ports 52512 and 52513 are the ABB and Sawyer robots.
+The word `await` means "wait for the robot to answer", and it can only be used inside a function marked `async`.
 
-This example moves one joint using `jog_freespace`, then runs a trajectory using a generator. Enum values are read from the pulled service definition.
+### What you can do with a connected robot
 
-```ts
-import { BrowserWebSocketTransport, RobotRaconteurNode } from "robotraconteur";
+| To do this | Write this |
+| --- | --- |
+| Read a property | `await robot.getProperty("name")` |
+| Set a property | `await robot.setProperty("name", value)` |
+| Call a function | `await robot.callFunction("name", [first, second])` |
+| Get a sub-object | `await robot.getObjRef("name")`, or `await robot.getObjRef("name", index)` |
+| Read a wire's latest value | `(await robot.peekWireInValue("name")).value` |
+| Read a wire's output value | `(await robot.peekWireOutValue("name")).value` |
+| Set a wire's output value | `await robot.pokeWireOutValue("name", value)` |
+| Read from a generator | `await robot.callFunctionGenNext(handle)` |
+| Finish or abort a generator | `await robot.callFunctionGenClose(handle)` or `await robot.callFunctionGenAbort(handle)` |
 
-const node = new RobotRaconteurNode();
-node.registerTransport(new BrowserWebSocketTransport(node));
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+The names come from the service definition of the robot. Plain arrays of numbers such as `[1, 0, 0]` can be used anywhere an array is expected.
 
+If a service requires a login, pass the user name and password when connecting:
+
+```js
+const credentials = new Map([["password", new RobotRaconteur.VarValue("secret", "string")]]);
+const robot = await node.connectService(url, "username", credentials);
+```
+
+## Using the library from Node.js
+
+Node.js 22 or newer is required. From this repository folder, run:
+
+```
+npm install
+npm run build
+node examples/reynard.mjs
+```
+
+See [examples/reynard.mjs](examples/reynard.mjs). The code is the same as in a web page, except that the library is loaded with `import`.
+
+## Example: UR5e robot in the training simulator
+
+The [Robot Raconteur Training Simulator](https://github.com/robotraconteur-contrib/robotraconteur_training_sim) provides simulated articulated robots using the standard `com.robotraconteur.robotics.robot.Robot` type. See its documentation to install and start the UR5e scene. The first UR5e is at port 52511. In the Multi Robot scene that port is also a UR5e, and ports 52512 and 52513 are the ABB and Sawyer robots.
+
+This moves the first joint of the robot. The complete example, which also runs a trajectory using a generator, is [examples/ur5e.mjs](examples/ur5e.mjs).
+
+```js
 const robot = await node.connectService("rr+ws://localhost:52511?service=robot");
 
-const robot_def = robot.context.types.defs.get("com.robotraconteur.robotics.robot")!;
-const modes = robot_def.enums.find((e) => e.name === "RobotCommandMode")!.values;
-const mode = (name: string) => modes.find((v) => v.name === name)!.value;
+// Change to jog mode. The robot must go through halt (0) to reach jog (1)
+await robot.setProperty("command_mode", 0);
+await new Promise((resolve) => setTimeout(resolve, 100));
+await robot.setProperty("command_mode", 1);
 
-// Get the joint names and current joint positions
-const robot_info: any = await robot.getProperty("robot_info");
-const joint_names = robot_info.joint_info.map((j: any) => j.joint_identifier.name);
-const state: any = (await robot.peekWireInValue("robot_state")).value;
-const start: Float64Array = state.joint_position;
-
-// The robot must pass through halt to change command modes
-await robot.setProperty("command_mode", mode("halt"));
-await sleep(100);
-await robot.setProperty("command_mode", mode("jog"));
-
-// Jog the first joint in a sine wave for five seconds
-for (let i = 0; i < 50; i++) {
-    const target = start.map((q, j) => (j === 0 ? q + 0.2 * Math.sin(i / 10) : q));
-    await robot.callFunction("jog_freespace", [target, new Float64Array(start.length).fill(1), true]);
-    await sleep(100);
-}
-
-// Build a trajectory that returns to the starting position
-await robot.setProperty("command_mode", mode("halt"));
-await sleep(100);
-await robot.setProperty("command_mode", mode("trajectory"));
-
-const current: any = (await robot.peekWireInValue("robot_state")).value;
-const waypoints = [
-    { time_from_start: 0, joint_position: current.joint_position },
-    { time_from_start: 5, joint_position: start }
-].map((w) => ({
-    ...w,
-    joint_velocity: [],
-    position_tolerance: [],
-    velocity_tolerance: [],
-    interpolation_mode: 0,
-    waypoint_type: 0
-}));
-const trajectory = { joint_names, joint_units: null, waypoints, extended: null };
-
-// Generator functions return a handle. The end is reported as an error with isStopIteration set
-const gen: any = await robot.callFunction("execute_trajectory", [trajectory]);
-try {
-    for (;;) {
-        const status: any = await robot.callFunctionGenNext(gen);
-        console.log(status.action_status, status.trajectory_time);
-    }
-} catch (e: any) {
-    if (!e.isStopIteration) throw e;
-}
-
-await node.disconnectService(robot);
+// Read the current joint positions, then jog the first joint by 0.1 radians
+const state = (await robot.peekWireInValue("robot_state")).value;
+const target = Array.from(state.joint_position);
+target[0] = target[0] + 0.1;
+await robot.callFunction("jog_freespace", [target, [1, 1, 1, 1, 1, 1], true]);
 ```
 
-`callFunctionGenClose(handle)` finishes a generator early and `callFunctionGenAbort(handle)` aborts its operation. Object references are accessed with `getObjRef(name, index)`, which returns a client for the referenced object with the same functions.
+## Reference
 
-Clients in a browser page must be allowed by the service. See [Limitations](#limitations).
+TypeScript type definitions are included for those who want them. Parameters can also be passed by name, as in `robot.callFunction("add", { a: 1, b: 2 })`.
 
 ### Value types
 

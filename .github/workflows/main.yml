@@ -48,6 +48,8 @@ jobs:
       run: npx playwright install --with-deps chromium
     - name: Build
       run: npm run build
+    - name: Check that the browser file is up to date
+      run: git diff --exit-code examples/robotraconteur.min.js
     - name: Test
       run: npm test
     - name: Bundle size
