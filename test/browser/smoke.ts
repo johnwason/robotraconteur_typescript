@@ -12,41 +12,39 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { BrowserWebSocketTransport, GeneratorHandle, RobotRaconteurNode, ServiceStub } from "../../src/index.js";
+import { BrowserWebSocketTransport, RobotRaconteurNode } from "../../src/index.js";
+import { clientTests, Vectors } from "../common/ClientTests.js";
 
-// Exercises each kind of client operation from a real browser page
+// Runs the complete shared client test suite from a real browser page
 
-async function runSmoke(port: number): Promise<Record<string, unknown>>
+interface Outcome
 {
-    const node = new RobotRaconteurNode();
-    node.registerTransport(new BrowserWebSocketTransport(node));
-    const r1: ServiceStub = await node.connectService(`rr+ws://localhost:${port}?service=RobotRaconteurTestService`);
-    const r2: ServiceStub = await node.connectService(`rr+ws://localhost:${port}?service=RobotRaconteurTestService2`);
-
-    await r1.setProperty("d1", 3.456);
-    const d1 = await r1.getProperty("d1");
-    const func3 = await r1.callFunction("func3", [2.2, 3.3]);
-    const o1 = await r1.getObjRef("o1");
-    await o1.setProperty("d2", { dims: [2, 1], array: [1.5, 2.5] });
-    const o1_d2 = (await o1.getProperty("d2")) as { dims: Uint32Array };
-
-    const g = (await r2.callFunction("gen_func1")) as GeneratorHandle;
-    const gen: unknown[] = [];
-    try
-    {
-        for (;;) gen.push(await r2.callFunctionGenNext(g));
-    }
-    catch (e)
-    {
-        if (!(e as { isStopIteration?: boolean }).isStopIteration) throw e;
-    }
-
-    const peek = (await r2.peekWireInValue("peekwire")).value;
-    await r2.pokeWireOutValue("pokewire", 75738265);
-    const poke = (await r2.peekWireOutValue("pokewire")).value;
-
-    await node.shutdown();
-    return { d1, func3, o1_dims: Array.from(o1_d2.dims), gen, peek, poke };
+    name: string;
+    error?: string;
 }
 
-(globalThis as unknown as { runSmoke: typeof runSmoke }).runSmoke = runSmoke;
+async function runAll(port: number): Promise<Outcome[]>
+{
+    const node = new RobotRaconteurNode();
+    node.requestTimeout = 30000;
+    node.registerTransport(new BrowserWebSocketTransport(node));
+    const vectors = (globalThis as unknown as { rr_vectors: Vectors }).rr_vectors;
+
+    const out: Outcome[] = [];
+    for (const t of clientTests(node, port, vectors))
+    {
+        try
+        {
+            await t.run();
+            out.push({ name: t.name });
+        }
+        catch (e)
+        {
+            out.push({ name: t.name, error: String((e as Error).stack ?? e) });
+        }
+    }
+    await node.shutdown();
+    return out;
+}
+
+(globalThis as unknown as { runAll: typeof runAll }).runAll = runAll;

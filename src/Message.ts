@@ -181,7 +181,8 @@ function writeElement(w: ArrayBinaryWriter, e: MessageElement): void
     w.u32(0);
     w.string16(e.elementName);
     w.u16(e.elementType);
-    w.string16(d instanceof MessageElementNestedElementList ? d.typeName : e.elementTypeName);
+    // As in Core, only nested element lists carry a type name
+    w.string16(d instanceof MessageElementNestedElementList ? d.typeName : "");
     w.string16(e.metaData);
 
     const count_pos = w.pos;

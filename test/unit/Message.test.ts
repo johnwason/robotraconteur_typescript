@@ -89,6 +89,17 @@ test("message layout matches Message Version 2", () =>
     assert.equal(v.getUint16(68, true), 111);
 });
 
+test("type names are only written for nested elements", () =>
+{
+    const m = new Message();
+    const e = new MessageEntry(MessageEntryType.ConnectionTest);
+    const el = new MessageElement("a", DataTypes.double_t, Float64Array.of(1));
+    el.elementTypeName = "not.written";
+    e.addElement(el);
+    m.entries.push(e);
+    assert.equal(deserializeMessage(serializeMessage(m)).entries[0]!.elements[0]!.elementTypeName, "");
+});
+
 test("deserialize rejects corrupted messages", () =>
 {
     const good = serializeMessage(sample());

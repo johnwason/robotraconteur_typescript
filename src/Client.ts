@@ -50,10 +50,16 @@ function error(code: MessageErrorType, name: string, message: string): RobotRaco
     return new RobotRaconteurError(code, "RobotRaconteur." + name, message);
 }
 
-/** Encode an objref index for use in a service path. Dots are always encoded */
-function encodeServicePathIndex(index: string): string
+/** Encode an objref index for use in a service path. Only ASCII letters and digits are left unescaped */
+export function encodeServicePathIndex(index: string): string
 {
-    return encodeURIComponent(index).replace(/[-.!~*'()]/g, (c) => "%" + c.charCodeAt(0).toString(16));
+    let out = "";
+    for (const b of new TextEncoder().encode(index))
+    {
+        const c = String.fromCharCode(b);
+        out += /[a-zA-Z0-9]/.test(c) ? c : "%" + b.toString(16).padStart(2, "0");
+    }
+    return out;
 }
 
 function isGeneratorType(t: TypeDefinition | undefined): boolean
