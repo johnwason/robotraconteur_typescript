@@ -1,0 +1,47 @@
+{
+    "name": "robotraconteur",
+    "version": "0.1.0",
+    "description": "Small pure TypeScript Robot Raconteur client for browsers",
+    "license": "Apache-2.0",
+    "author": "Wason Technology, LLC",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/johnwason/robotraconteur_typescript.git"
+    },
+    "type": "module",
+    "sideEffects": false,
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+        },
+        "./validators": {
+            "types": "./dist/ServiceDefinitionValidators.d.ts",
+            "default": "./dist/ServiceDefinitionValidators.js"
+        },
+        "./service-definition.schema.json": "./service-definition.schema.json"
+    },
+    "files": [
+        "dist",
+        "service-definition.schema.json",
+        "LICENSE",
+        "README.md"
+    ],
+    "scripts": {
+        "build": "tsc -p tsconfig.json",
+        "build:test": "tsc -p tsconfig.test.json && node scripts/bundle-browser-test.mjs",
+        "test:unit": "npm run build:test && node --test \"dist-test/test/unit/*.test.js\"",
+        "test:integration": "npm run build:test && node --test --test-concurrency=1 \"dist-test/test/integration/*.test.js\"",
+        "test": "npm run build:test && node --test --test-concurrency=1 \"dist-test/test/unit/*.test.js\" \"dist-test/test/integration/*.test.js\"",
+        "size": "node scripts/size-report.mjs",
+        "fixtures": "python3 scripts/generate_robdef_oracle.py && python3 scripts/record_vectors.py"
+    },
+    "devDependencies": {
+        "@types/node": "22.10.2",
+        "esbuild": "0.24.2",
+        "playwright": "1.49.1",
+        "typescript": "5.7.2"
+    }
+}

@@ -1,0 +1,771 @@
+{
+ "com.robotraconteur.testing.TestService1.robdef": {
+  "constants": [],
+  "enums": [],
+  "exceptions": [
+   "testexception1",
+   "testexception2"
+  ],
+  "imports": [
+   "com.robotraconteur.testing.TestService2"
+  ],
+  "name": "com.robotraconteur.testing.TestService1",
+  "namedArrays": [],
+  "objects": [
+   {
+    "constants": [],
+    "implements": [
+     "com.robotraconteur.testing.TestService2.baseobj"
+    ],
+    "members": [
+     "property double d1",
+     "property double[] d2",
+     "property double[16] d3",
+     "property double[16-] d4",
+     "property double[*] d5",
+     "property double[3,3] d6",
+     "property single s1",
+     "property single[] s2",
+     "property int8 i8_1",
+     "property int8[] i8_2",
+     "property uint8 u8_1",
+     "property uint8[] u8_2",
+     "property uint8[*] u8_3",
+     "property int16 i16_1",
+     "property int16[] i16_2",
+     "property uint16 u16_1",
+     "property uint16[] u16_2",
+     "property int32 i32_1",
+     "property int32[] i32_2",
+     "property int32[] i32_huge",
+     "property uint32 u32_1",
+     "property uint32[] u32_2",
+     "property int64 i64_1",
+     "property int64[] i64_2",
+     "property uint64 u64_1",
+     "property uint64[] u64_2",
+     "property string str1",
+     "property teststruct1 struct1",
+     "property teststruct2 struct2",
+     "property double{int32} is_d1",
+     "property double{string} is_d2",
+     "property double[]{int32} is_d3",
+     "property double[]{string} is_d4",
+     "property double[*]{int32} is_d5",
+     "property double[*]{string} is_d6",
+     "property string{int32} is_str1",
+     "property string{string} is_str2",
+     "property teststruct2{int32} is_struct1",
+     "property teststruct2{string} is_struct2",
+     "property com.robotraconteur.testing.TestService2.ostruct2 struct3",
+     "property double{list} list_d1",
+     "property double[]{list} list_d3",
+     "property double[*]{list} list_d5",
+     "property string{list} list_str1",
+     "property teststruct2{list} list_struct1",
+     "property varvalue var1",
+     "property varvalue{int32} var2",
+     "property varvalue var_num",
+     "property varvalue var_str",
+     "property varvalue var_struct",
+     "property varvalue var_vector",
+     "property varvalue var_dictionary",
+     "property varvalue var_list",
+     "property varvalue var_multidimarray",
+     "property double errtest",
+     "property teststruct1 nulltest",
+     "function void func1()",
+     "function void func2(double d1, double d2)",
+     "function double func3(double d1, double d2)",
+     "function int32 meaning_of_life()",
+     "function void func_errtest()",
+     "function void func_errtest1()",
+     "function void func_errtest2()",
+     "function void func_errtest3()",
+     "event ev1()",
+     "event ev2(double d1, teststruct2 s2)",
+     "objref sub1 o1",
+     "objref sub1[] o2",
+     "objref sub1{int32} o3",
+     "objref sub1{string} o4",
+     "objref com.robotraconteur.testing.TestService2.subobj o5",
+     "objref varobject o6",
+     "function void o6_op(int32 op)",
+     "pipe double[] p1",
+     "pipe teststruct2 p2",
+     "function void pipe_check_error()",
+     "pipe double broadcastpipe",
+     "callback void cb1()",
+     "callback void cb2(double d1, double d2)",
+     "callback double cb3(double d1, double d2)",
+     "callback int32 cb_meaning_of_life()",
+     "callback void cb_errtest()",
+     "function void test_callbacks()",
+     "wire double[] w1",
+     "wire teststruct2 w2",
+     "wire int32[*] w3",
+     "wire double broadcastwire",
+     "memory double[] m1",
+     "memory double[*] m2",
+     "memory uint8[*] m3"
+    ],
+    "name": "testroot",
+    "options": [
+     "constant double[] doubleconst {3.4, 4.8, 14372.8}",
+     "constant string strconst \"This is a constant\""
+    ]
+   },
+   {
+    "constants": [],
+    "implements": [],
+    "members": [
+     "property double[] d1",
+     "property double[*] d2",
+     "objref sub2 o2_1",
+     "objref sub2{int32} o2_2",
+     "objref sub2{string} o2_3",
+     "property string s_ind",
+     "property int32 i_ind"
+    ],
+    "name": "sub1",
+    "options": []
+   },
+   {
+    "constants": [],
+    "implements": [],
+    "members": [
+     "property string s_ind",
+     "property int32 i_ind",
+     "property string data",
+     "objref sub3{string} o3_1"
+    ],
+    "name": "sub2",
+    "options": []
+   },
+   {
+    "constants": [],
+    "implements": [],
+    "members": [
+     "property string ind",
+     "property string data2",
+     "property double data3",
+     "function double add(double d)"
+    ],
+    "name": "sub3",
+    "options": []
+   }
+  ],
+  "options": [
+   "version 0.8"
+  ],
+  "pods": [],
+  "structures": [
+   {
+    "constants": [],
+    "implements": [],
+    "members": [
+     "property double[] dat1",
+     "property string str2",
+     "property string{int32} vec3",
+     "property string{string} dict4",
+     "property string{list} list5",
+     "property teststruct2 struct1",
+     "property teststruct2{string} dstruct2",
+     "property teststruct2{list} lstruct3",
+     "property double[*] multidimarray",
+     "property varvalue var3"
+    ],
+    "name": "teststruct1",
+    "options": []
+   },
+   {
+    "constants": [],
+    "implements": [],
+    "members": [
+     "property double[] mydat"
+    ],
+    "name": "teststruct2",
+    "options": []
+   }
+  ],
+  "using": []
+ },
+ "com.robotraconteur.testing.TestService2.robdef": {
+  "constants": [],
+  "enums": [],
+  "exceptions": [
+   "testexception3"
+  ],
+  "imports": [],
+  "name": "com.robotraconteur.testing.TestService2",
+  "namedArrays": [],
+  "objects": [
+   {
+    "constants": [],
+    "implements": [],
+    "members": [
+     "property double d1",
+     "property double[] d2",
+     "function double func3(double d1, double d2)",
+     "event ev1()",
+     "objref subobj o5",
+     "pipe double[] p1",
+     "callback void cb2(double d1, double d2)",
+     "wire double[] w1",
+     "memory double[] m1"
+    ],
+    "name": "baseobj",
+    "options": []
+   },
+   {
+    "constants": [],
+    "implements": [],
+    "members": [
+     "function double add_val(double v)"
+    ],
+    "name": "subobj",
+    "options": []
+   }
+  ],
+  "options": [
+   "version 0.8"
+  ],
+  "pods": [],
+  "structures": [
+   {
+    "constants": [],
+    "implements": [],
+    "members": [
+     "property double[] a1"
+    ],
+    "name": "ostruct2",
+    "options": []
+   }
+  ],
+  "using": []
+ },
+ "com.robotraconteur.testing.TestService3.robdef": {
+  "constants": [
+   "constant string strconst \"This is a\\n \\\"string constant\\\" \\\\\\/\\b\\f \\r\\u00FF tabme\\ttabme\\n smile! \\ud83d\\udE01\"",
+   "constant int32 int32const 3856384",
+   "constant int32[] int32const_array {182476, 56483, -2947}",
+   "constant int32 int32hexconst 0x082bc7",
+   "constant int32 int32hexconst2 -0x7264c17",
+   "constant int32[] int32hexconst_array { 0x8274ec, -0x0001, +0xABCDEF, 0xabcdef, 0x012345, 0x6789 }",
+   "constant double[] doubleconst_array {1.5847, 3.14, -548e3, 3452.67e2, 485e-21}",
+   "constant struct structconst {field1: strconst, field2: int32const_array}",
+   "constant struct structconst2 {field3: structconst, field4: int32const}"
+  ],
+  "enums": [
+   {
+    "name": "testenum1",
+    "values": [
+     [
+      "value1",
+      0
+     ],
+     [
+      "value2",
+      1
+     ],
+     [
+      "value3",
+      2
+     ],
+     [
+      "anothervalue",
+      -1
+     ],
+     [
+      "anothervalue2",
+      -2
+     ],
+     [
+      "anothervalue3",
+      -3
+     ],
+     [
+      "hexval1",
+      16
+     ],
+     [
+      "hexval2",
+      17
+     ],
+     [
+      "neghexval1",
+      -2147483643
+     ],
+     [
+      "neghexval2",
+      -2147483642
+     ],
+     [
+      "more_values",
+      -2147483641
+     ]
+    ]
+   }
+  ],
+  "exceptions": [
+   "test_exception4"
+  ],
+  "imports": [
+   "com.robotraconteur.testing.TestService1"
+  ],
+  "name": "com.robotraconteur.testing.TestService3",
+  "namedArrays": [
+   {
+    "constants": [],
+    "implements": [],
+    "members": [
+     "property double x",
+     "property double y",
+     "property double z"
+    ],
+    "name": "vector3",
+    "options": []
+   },
+   {
+    "constants": [],
+    "implements": [],
+    "members": [
+     "property double q0",
+     "property double q1",
+     "property double q2",
+     "property double q3"
+    ],
+    "name": "quaternion",
+    "options": []
+   },
+   {
+    "constants": [],
+    "implements": [],
+    "members": [
+     "property quaternion rotation",
+     "property vector3 translation"
+    ],
+    "name": "transform",
+    "options": []
+   },
+   {
+    "constants": [],
+    "implements": [],
+    "members": [
+     "property uint8 r",
+     "property uint8 b",
+     "property uint8 g"
+    ],
+    "name": "pixel",
+    "options": []
+   },
+   {
+    "constants": [],
+    "implements": [],
+    "members": [
+     "property uint8 c",
+     "property pixel d",
+     "property pixel e",
+     "property pixel[7] f",
+     "property pixel g"
+    ],
+    "name": "pixel2",
+    "options": []
+   }
+  ],
+  "objects": [
+   {
+    "constants": [
+     "constant string unknown_modifier_hello \"hello world!\""
+    ],
+    "implements": [],
+    "members": [
+     "property int32 readme [readonly]",
+     "property int32 writeme [writeonly]",
+     "pipe int32 unreliable1 [unreliable,readonly]",
+     "wire int32 peekwire [readonly]",
+     "wire int32 pokewire [writeonly]",
+     "property int32 unknown_modifier [unknown,unknown_3(23, 45.8e-5, unknown_modifier_hello)]",
+     "memory double[] readmem [readonly]",
+     "objref obj4 o4",
+     "property testenum1 testenum1_prop",
+     "property testpod1 testpod1_prop",
+     "function void testpod1_func1(testpod1 s)",
+     "function testpod1 testpod1_func2()",
+     "property teststruct3 teststruct3_prop",
+     "memory testpod2[] pod_m1",
+     "memory testpod2[*] pod_m2",
+     "function double{generator} gen_func1()",
+     "function uint8[]{generator} gen_func2(string name)",
+     "function void gen_func3(string name, uint8[]{generator} in)",
+     "function uint8[]{generator} gen_func4(uint8[]{generator} in)",
+     "function teststruct2{generator} gen_func5(teststruct2{generator} in)",
+     "property double[6]{list} d1",
+     "property double[6-]{list} d2",
+     "property double[6]{int32} d3",
+     "property double[6-]{int32} d4",
+     "property double[3,3]{list} d5",
+     "property double[3,3]{int32} d6",
+     "pipe int32[3] p1",
+     "pipe int32[3-] p2",
+     "pipe int32[2,2] p3",
+     "wire int32[6] w1",
+     "wire int32[6-] w2",
+     "wire int32[3,2] w3",
+     "property vector3 testnamedarray1",
+     "property transform testnamedarray2",
+     "property transform[10-] testnamedarray3",
+     "property transform[*] testnamedarray4",
+     "property transform[3,2] testnamedarray5",
+     "memory transform[] namedarray_m1",
+     "memory transform[*] namedarray_m2",
+     "property cdouble c1",
+     "property cdouble[] c2",
+     "property cdouble[*] c3",
+     "property cdouble{list} c4",
+     "property cdouble[]{list} c5",
+     "property cdouble[*]{list} c6",
+     "property csingle c7",
+     "property csingle[] c8",
+     "property csingle[*] c9",
+     "property csingle{list} c10",
+     "property csingle[]{list} c11",
+     "property csingle[*]{list} c12",
+     "property bool b1",
+     "property bool[] b2",
+     "property bool[*] b3",
+     "property bool{list} b4",
+     "property bool[]{list} b5",
+     "property bool[*]{list} b6",
+     "memory cdouble[] c_m1",
+     "memory cdouble[*] c_m2",
+     "memory cdouble[] c_m3",
+     "memory cdouble[*] c_m4",
+     "memory bool[] c_m5",
+     "memory bool[*] c_m6",
+     "objref obj5 nolock_test",
+     "function void test_exception_params1()",
+     "function void test_exception_params2()",
+     "function testenum1{generator} enum_generator1()",
+     "function testenum1{generator} enum_generator2(int32 a, int32 b, testenum1{generator} enum_gen)"
+    ],
+    "name": "testroot3",
+    "options": []
+   },
+   {
+    "constants": [],
+    "implements": [],
+    "members": [
+     "property double[] d1"
+    ],
+    "name": "obj1",
+    "options": []
+   },
+   {
+    "constants": [],
+    "implements": [
+     "obj1"
+    ],
+    "members": [
+     "property double[] d1"
+    ],
+    "name": "obj2",
+    "options": []
+   },
+   {
+    "constants": [],
+    "implements": [
+     "obj1",
+     "obj2"
+    ],
+    "members": [
+     "property double[] d1"
+    ],
+    "name": "obj3",
+    "options": []
+   },
+   {
+    "constants": [],
+    "implements": [
+     "com.robotraconteur.testing.TestService1.sub2"
+    ],
+    "members": [
+     "property string s_ind",
+     "property int32 i_ind",
+     "property string data",
+     "objref sub3{string} o3_1"
+    ],
+    "name": "obj4",
+    "options": []
+   },
+   {
+    "constants": [],
+    "implements": [],
+    "members": [
+     "property double p1",
+     "property double p2 [nolock]",
+     "property double p3 [nolockread]",
+     "function int32 f1()",
+     "function int32 f2() [nolock]",
+     "pipe int32 q1 [readonly]",
+     "pipe int32 q2 [readonly,nolock]",
+     "wire int32 w1 [readonly]",
+     "wire int32 w2 [readonly,nolock]",
+     "memory int32[] m1",
+     "memory int32[] m2 [nolock]",
+     "memory int32[] m3 [nolockread]"
+    ],
+    "name": "obj5",
+    "options": []
+   }
+  ],
+  "options": [],
+  "pods": [
+   {
+    "constants": [],
+    "implements": [],
+    "members": [
+     "property double d1",
+     "property double[6] d2",
+     "property double[6-] d3",
+     "property double[3,3] d4",
+     "property testpod2 s1",
+     "property testpod2[8] s2",
+     "property testpod2[9-] s3",
+     "property testpod2[2,4] s4",
+     "property transform t1",
+     "property transform[4] t2",
+     "property transform[15-] t3",
+     "property transform[2,4] t4"
+    ],
+    "name": "testpod1",
+    "options": []
+   },
+   {
+    "constants": [],
+    "implements": [],
+    "members": [
+     "property int8 i1",
+     "property int8[15] i2",
+     "property int8[17-] i3"
+    ],
+    "name": "testpod2",
+    "options": []
+   }
+  ],
+  "structures": [
+   {
+    "constants": [],
+    "implements": [],
+    "members": [
+     "property testpod1 s1",
+     "property testpod1[] s2",
+     "property testpod1[11] s3",
+     "property testpod1[16-] s4",
+     "property testpod1[3,3] s5",
+     "property testpod1[*] s6",
+     "property testpod1{list} s7",
+     "property testpod1[]{list} s8",
+     "property testpod1[*]{list} s9",
+     "property varvalue s10",
+     "property varvalue s11",
+     "property varvalue s12",
+     "property varvalue s13",
+     "property varvalue s14",
+     "property varvalue s15",
+     "property transform t1",
+     "property transform[4] t2",
+     "property transform[2,4] t3",
+     "property varvalue t4",
+     "property varvalue t5",
+     "property transform{list} t6",
+     "property transform[4]{list} t7",
+     "property transform[2,4]{list} t8",
+     "property varvalue t9",
+     "property varvalue t10",
+     "property varvalue t11"
+    ],
+    "name": "teststruct3",
+    "options": []
+   }
+  ],
+  "using": [
+   [
+    "com.robotraconteur.testing.TestService1.testroot",
+    "testroot"
+   ],
+   [
+    "com.robotraconteur.testing.TestService1.teststruct1",
+    "teststruct1"
+   ],
+   [
+    "com.robotraconteur.testing.TestService1.teststruct2",
+    "teststruct2"
+   ],
+   [
+    "com.robotraconteur.testing.TestService1.testexception1",
+    "testexception1"
+   ],
+   [
+    "com.robotraconteur.testing.TestService1.sub2",
+    "sub2"
+   ],
+   [
+    "com.robotraconteur.testing.TestService1.sub3",
+    "sub3"
+   ]
+  ]
+ },
+ "com.robotraconteur.testing.TestService4.robdef": {
+  "constants": [
+   "constant double myconst 0"
+  ],
+  "enums": [
+   {
+    "name": "enum1",
+    "values": [
+     [
+      "enum_val1",
+      0
+     ],
+     [
+      "enum_val2",
+      1
+     ],
+     [
+      "enum_val3",
+      2
+     ],
+     [
+      "enum_val4",
+      3
+     ]
+    ]
+   }
+  ],
+  "exceptions": [
+   "exception1"
+  ],
+  "imports": [],
+  "name": "com.robotraconteur.testing.TestService4",
+  "namedArrays": [
+   {
+    "constants": [],
+    "implements": [],
+    "members": [
+     "property double field1",
+     "property double field2",
+     "property double[3] field3"
+    ],
+    "name": "namedarray1",
+    "options": []
+   }
+  ],
+  "objects": [
+   {
+    "constants": [
+     "constant double myconst2 0"
+    ],
+    "implements": [],
+    "members": [
+     "property int32 p1",
+     "function void f1(int32 a)",
+     "event e1(int32 b, double c)",
+     "objref obj1 o1",
+     "pipe int32 p2",
+     "callback int32 cb(double[] v)",
+     "wire double w1",
+     "memory double[] m1"
+    ],
+    "name": "obj1",
+    "options": []
+   }
+  ],
+  "options": [],
+  "pods": [
+   {
+    "constants": [],
+    "implements": [],
+    "members": [
+     "property double field1",
+     "property double field2",
+     "property double[2] field3"
+    ],
+    "name": "pod1",
+    "options": []
+   }
+  ],
+  "structures": [
+   {
+    "constants": [],
+    "implements": [],
+    "members": [
+     "property double field1",
+     "property double field2",
+     "property double{list} field3"
+    ],
+    "name": "struct1",
+    "options": []
+   }
+  ],
+  "using": []
+ },
+ "com.robotraconteur.testing.TestService5.robdef": {
+  "constants": [],
+  "enums": [],
+  "exceptions": [
+   "asynctestexp"
+  ],
+  "imports": [],
+  "name": "com.robotraconteur.testing.TestService5",
+  "namedArrays": [],
+  "objects": [
+   {
+    "constants": [],
+    "implements": [],
+    "members": [
+     "property double d1",
+     "property string s1",
+     "property double[] d2",
+     "property string{list} s2",
+     "property teststruct4 s3",
+     "property double err",
+     "function void f1()",
+     "function void f2(int32 a)",
+     "function int32 f3(double a, double b)",
+     "function double{generator} f4()",
+     "function void f5(double a, double{generator} b)",
+     "function teststruct4{generator} f6(double a, teststruct5{generator} b)",
+     "function void err_func()",
+     "function double err_func2()",
+     "function double{generator} err_func3()"
+    ],
+    "name": "asynctestroot",
+    "options": []
+   }
+  ],
+  "options": [],
+  "pods": [],
+  "structures": [
+   {
+    "constants": [],
+    "implements": [],
+    "members": [
+     "property double a"
+    ],
+    "name": "teststruct4",
+    "options": []
+   },
+   {
+    "constants": [],
+    "implements": [],
+    "members": [
+     "property string a"
+    ],
+    "name": "teststruct5",
+    "options": []
+   }
+  ],
+  "using": []
+ }
+}

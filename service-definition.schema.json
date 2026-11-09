@@ -1,0 +1,118 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://github.com/johnwason/robotraconteur_typescript/service-definition.schema.json",
+    "title": "Robot Raconteur parsed service definition",
+    "type": "object",
+    "required": ["name", "imports", "using", "options", "constants", "enums", "exceptions", "structures", "pods", "namedArrays", "objects"],
+    "additionalProperties": false,
+    "properties": {
+        "name": { "type": "string" },
+        "stdVer": { "type": "string" },
+        "docString": { "type": "string" },
+        "imports": { "type": "array", "items": { "type": "string" } },
+        "using": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["qualifiedName", "unqualifiedName"],
+                "additionalProperties": false,
+                "properties": { "qualifiedName": { "type": "string" }, "unqualifiedName": { "type": "string" } }
+            }
+        },
+        "options": { "type": "array", "items": { "type": "string" } },
+        "constants": { "type": "array", "items": { "$ref": "#/$defs/constant" } },
+        "enums": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["name", "values"],
+                "additionalProperties": false,
+                "properties": {
+                    "name": { "type": "string" },
+                    "docString": { "type": "string" },
+                    "values": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["name", "value"],
+                            "additionalProperties": false,
+                            "properties": { "name": { "type": "string" }, "value": { "type": "integer" }, "docString": { "type": "string" } }
+                        }
+                    }
+                }
+            }
+        },
+        "exceptions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["name"],
+                "additionalProperties": false,
+                "properties": { "name": { "type": "string" }, "docString": { "type": "string" } }
+            }
+        },
+        "structures": { "type": "array", "items": { "$ref": "#/$defs/entry" } },
+        "pods": { "type": "array", "items": { "$ref": "#/$defs/entry" } },
+        "namedArrays": { "type": "array", "items": { "$ref": "#/$defs/entry" } },
+        "objects": { "type": "array", "items": { "$ref": "#/$defs/entry" } }
+    },
+    "$defs": {
+        "type": {
+            "type": "object",
+            "required": ["type"],
+            "additionalProperties": false,
+            "properties": {
+                "type": { "type": "string" },
+                "array": { "enum": ["array", "multidimarray"] },
+                "arrayLength": { "type": "array", "items": { "type": "integer", "minimum": 0 } },
+                "arrayVarLength": { "type": "boolean" },
+                "container": { "enum": ["list", "map_int32", "map_string", "generator"] }
+            }
+        },
+        "constant": {
+            "type": "object",
+            "required": ["name", "type", "value"],
+            "additionalProperties": false,
+            "properties": {
+                "name": { "type": "string" },
+                "type": { "$ref": "#/$defs/type" },
+                "value": { "type": "string" },
+                "docString": { "type": "string" }
+            }
+        },
+        "member": {
+            "type": "object",
+            "required": ["kind", "name"],
+            "additionalProperties": false,
+            "properties": {
+                "kind": { "enum": ["field", "property", "function", "event", "objref", "pipe", "callback", "wire", "memory"] },
+                "name": { "type": "string" },
+                "type": { "$ref": "#/$defs/type" },
+                "parameters": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["name", "type"],
+                        "additionalProperties": false,
+                        "properties": { "name": { "type": "string" }, "type": { "$ref": "#/$defs/type" } }
+                    }
+                },
+                "modifiers": { "type": "array", "items": { "type": "string" } },
+                "docString": { "type": "string" }
+            }
+        },
+        "entry": {
+            "type": "object",
+            "required": ["name", "implements", "options", "constants", "members"],
+            "additionalProperties": false,
+            "properties": {
+                "name": { "type": "string" },
+                "implements": { "type": "array", "items": { "type": "string" } },
+                "options": { "type": "array", "items": { "type": "string" } },
+                "constants": { "type": "array", "items": { "$ref": "#/$defs/constant" } },
+                "members": { "type": "array", "items": { "$ref": "#/$defs/member" } },
+                "docString": { "type": "string" }
+            }
+        }
+    }
+}
