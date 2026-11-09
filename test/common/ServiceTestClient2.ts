@@ -16,12 +16,12 @@ import { GeneratorHandle, parseTypeDefinition, RobotRaconteurError, ServiceStub,
 import { packElement, unpackElement } from "../../src/Pack.js";
 import { assert } from "./check.js";
 import * as st from "./ServiceTest2.js";
-import { errorNamed } from "./TestUtil.js";
+import { errorNamed, sleep } from "./TestUtil.js";
 
 // Port of the Core Python ServiceTestClient2.py, in the same order. TestComplex and TestBools are
-// generated, see ServiceTestClientGenerated.ts. Memories and wire and pipe connections are not
+// generated, see ServiceTestClientGenerated.ts. Memories and memory parts of tests are not
 // implemented by this client, so TestMemories, TestNamedArrayMemories, TestComplexMemories,
-// TestBoolMemories, and those parts of the other tests are not ported.
+// and TestBoolMemories are not ported.
 
 const T3 = "com.robotraconteur.testing.TestService3";
 
@@ -34,6 +34,12 @@ export async function TestWirePeekPoke(r: ServiceStub): Promise<void>
 
     await r.pokeWireOutValue("pokewire", 75738265);
     assert.equal((await r.peekWireOutValue("pokewire")).value, 75738265);
+
+    const w = await r.connectWire("pokewire");
+    for (let i = 0; i < 3; i++) r.setWireOutValue(w, 8638356);
+    await sleep(100);
+    assert.equal((await r.peekWireOutValue("pokewire")).value, 8638356);
+    await r.closeWire(w);
 }
 
 export async function TestEnums(r: ServiceStub): Promise<void>
@@ -144,6 +150,12 @@ export async function TestNoLock(r: ServiceStub): Promise<void>
 
     await assert.rejects(o5.callFunction("f1"), locked);
     await o5.callFunction("f2");
+
+    await assert.rejects(o5.connectPipe("q1", -1), locked);
+    await o5.closePipe(await o5.connectPipe("q2", -1));
+
+    await assert.rejects(o5.connectWire("w1"), locked);
+    await o5.closeWire(await o5.connectWire("w2"));
 }
 
 export async function TestExceptionParams(r: ServiceStub): Promise<void>

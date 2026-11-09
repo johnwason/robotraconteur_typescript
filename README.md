@@ -60,6 +60,8 @@ The word `await` means "wait for the robot to answer", and it can only be used i
 | Set a wire's output value | `await robot.pokeWireOutValue("name", value)` |
 | Read from a generator | `await robot.callFunctionGenNext(handle)` |
 | Finish or abort a generator | `await robot.callFunctionGenClose(handle)` or `await robot.callFunctionGenAbort(handle)` |
+| Stream a wire | `const wire = await robot.connectWire("name")` |
+| Connect a pipe | `const pipe = await robot.connectPipe("name")` |
 | Listen for an event | `robot.addEventListener("name", (first, second) => { ... })` |
 | Stop listening | `robot.removeEventListener("name", handler)` |
 | Let the service call your code | `robot.setCallback("name", (first, second) => result)` |
@@ -72,6 +74,49 @@ If a service requires a login, pass the user name and password when connecting:
 const credentials = new Map([["password", new RobotRaconteur.VarValue("secret", "string")]]);
 const robot = await node.connectService(url, "username", credentials);
 ```
+
+### Streaming with wires and pipes
+
+A **wire** always holds the most recent value, and older values are discarded. Use one for things like joint positions or commands.
+
+```js
+const wire = await robot.connectWire("robot_state");
+
+// Called on every new value
+robot.addWireValueChangedListener(wire, (handle, value, timestamp) => {
+    console.log(value.joint_position);
+});
+
+// Or read the latest value whenever you need it
+if (await robot.waitWireInValueValid(wire, 1000)) {
+    console.log(robot.getWireInValue(wire).value);
+}
+
+// Send a value to the service, if the wire allows it
+robot.setWireOutValue(wire, value);
+
+await robot.closeWire(wire);
+```
+
+A **pipe** delivers every packet in order. Use one when no packet may be lost.
+
+```js
+const pipe = await robot.connectPipe("name");
+
+// Await each send so that you do not outrun the connection
+await robot.sendPipePacket(pipe, value);
+
+// Wait up to one second for the next packet
+const packet = await robot.receivePipePacketWait(pipe, 1000);
+
+await robot.closePipe(pipe);
+```
+
+Packets wait in a queue until you read them, up to 65536 packets by default (`setPipeMaxReceiveQueue`). If the queue overflows, the pipe closes rather than silently losing data. Packets are acknowledged when your code takes them, so services that use acknowledgements slow down to the rate you read.
+
+Other wire functions are `tryGetWireInValue`, `getWireOutValue`, `tryGetWireOutValue`, `isWireInValueValid`, `isWireOutValueValid`, `waitWireOutValueValid`, `setWireInValueLifespan`, `setWireOutValueLifespan`, `setWireIgnoreInValue`, `removeWireValueChangedListener`, `setWireCloseCallback`, and `getWireDirection`.
+
+Other pipe functions are `receivePipePacket`, `peekPipePacket`, `peekPipePacketWait`, `tryReceivePipePacketWait`, `getPipePacketsAvailable`, `setPipeRequestPacketAck`, `setPipeIgnoreInValue`, `addPipePacketReceivedListener`, `addPipePacketAckListener`, `setPipeCloseCallback`, `getPipeDirection`, and `isPipeUnreliable`. A pipe can have several endpoints, selected by passing an index to `connectPipe`.
 
 ## Using the library from Node.js
 
@@ -154,7 +199,7 @@ The result is plain JSON described by [service-definition.schema.json](service-d
 
 | Bundle | Minified | Gzipped |
 | --- | --- | --- |
-| Client | 48.6 KB | 15.1 KB |
+| Client | 61.4 KB | 18.3 KB |
 | Parser only | 7.2 KB | 2.7 KB |
 | Validators | 8.6 KB | 3.1 KB |
 
@@ -168,7 +213,7 @@ Sending never builds up an unbounded backlog of stale data: one message is sent 
 
 * Client only, using Message Format Version 2. Message Version 4 is not offered during connection.
 * Only `rr+ws` and `rr+wss` connections through the WebSocket class. `tcp` and `rr+tcp` URLs are converted to WebSocket connections, matching RobotRaconteurWeb.
-* Pipes, memories, wire connections, object locks, discovery, and `rrs+` end-to-end encryption are not implemented.
+* Memories, object locks, discovery, and `rrs+` end-to-end encryption are not implemented.
 * Browsers send the origin of the page, and services must allow it. Pages loaded from `file://` and `robotraconteur.com` are allowed by default. Other origins, including `http://localhost`, must be added on the service with `AddWebSocketAllowedOrigin` or a command line option, for example `python -m reynard_the_robot --robotraconteur-tcp-ws-add-origins=http://localhost:8000`. Node.js clients do not send an origin.
 * Assumes a little-endian host, which covers browser platforms.
 
@@ -188,7 +233,7 @@ The tests use the standard service definitions from the Core repository (`test/r
 
 | Area | Source | How it is checked |
 | --- | --- | --- |
-| `TestProperties`, `TestFunctions`, `TestEvents`, `TestObjRefs`, `TestCallbacks`, `TestWirePeekPoke`, `TestEnums`, `TestPods`, `TestGenerators`, `TestNamedArrays`, `TestComplex`, `TestNoLock`, `TestBools`, `TestExceptionParams` | Core `ServiceTestClient.py` and `ServiceTestClient2.py` | Ported under the same names in `test/common`, for the members this client implements |
+| `TestProperties`, `TestFunctions`, `TestEvents`, `TestObjRefs`, `TestPipes`, `TestCallbacks`, `TestWires`, `TestWirePeekPoke`, `TestEnums`, `TestPods`, `TestGenerators`, `TestNamedArrays`, `TestComplex`, `TestNoLock`, `TestBools`, `TestExceptionParams` | Core `ServiceTestClient.py` and `ServiceTestClient2.py` | Ported under the same names in `test/common`, for the members this client implements |
 | `TestProperties` and `TestFunctions` for TestService5 | Core `ServiceTestClient3.py` | Ported |
 | The same operations as made by the Core Python client | Core test clients | Recorded and replayed against the same server, as an independent check |
 | Authentication, attributes | Core and RobotRaconteurWeb client tests | Ported |
@@ -196,7 +241,7 @@ The tests use the standard service definitions from the Core repository (`test/r
 | Service path index encoding | Core `EncodeServicePathIndexTest` | Same vectors |
 | Service definition parsing | Core and RobotRaconteurWeb `RobDef` tests | Compared with the Core parser's reading of each file |
 
-Tests for members this client does not implement (pipes, wire connections, memories, object and monitor locks) and for Message Version 4 are not ported. Core `MultiDimArray` tests are not applicable because this client has no multidimensional array class. Service definition string conversion and constant value evaluation from `RobDefTest` are not implemented.
+Tests for members this client does not implement (memories, object and monitor locks) and for Message Version 4 are not ported. Core `MultiDimArray` tests are not applicable because this client has no multidimensional array class. Service definition string conversion and constant value evaluation from `RobDefTest` are not implemented.
 
 `npm run fixtures` regenerates the following files:
 

@@ -20,23 +20,17 @@ import { RobotRaconteurNode } from "./Node.js";
 import { packElement, TypeContext, unpackElement, VarValue } from "./Pack.js";
 import { EntryDefinition, MemberDefinition, MemberKind, parseServiceDefinition, ServiceDefinition, TypeDefinition } from "./ServiceDefinition.js";
 import { ITransportConnection, parseConnectionUrl, Transport } from "./Transport.js";
+import { PipeAckHandler, PipeClosedHandler, PipeHandle, PipePacketHandler } from "./PipeMember.js";
+import { MemberContext, MemberDirection, memberDirection, packWirePacket, timeNow, unpackWirePacket, WireClosedHandler, WireHandle, WireValue, WireValueChangedHandler } from "./WireMember.js";
 
 const VARVALUE_MAP: TypeDefinition = { type: "varvalue", container: "map_string" };
 const VARVALUE: TypeDefinition = { type: "varvalue" };
-const TIMESPEC = "RobotRaconteur.TimeSpec";
 
 interface PendingRequest
 {
     resolve: (m: MessageEntry) => void;
     reject: (e: Error) => void;
     timer: ReturnType<typeof setTimeout>;
-}
-
-/** A value received from a wire member and the time it was sampled by the sender */
-export interface WireValue
-{
-    value: unknown;
-    timestamp: { seconds: bigint; nanoseconds: number };
 }
 
 export type EventHandler = (...args: any[]) => unknown;
@@ -85,6 +79,26 @@ export class ServiceStub
 
     private event_listeners = new Map<string, Set<EventHandler>>();
     private callbacks = new Map<string, CallbackHandler>();
+    private wires = new Map<string, WireHandle>();
+    private pipes = new Map<string, Map<number, PipeHandle>>();
+    private early_pipes = new Map<string, PipeHandle>();
+    private connecting_pipes: { name: string; index: number }[] = [];
+    private member_context: MemberContext = {
+        servicePath: this.servicePath,
+        pack: (name, t, v) => this.pack(name, t, v),
+        unpack: (e, t) => this.unpack(e, t),
+        request: (type, name, elements) => this.request(type, name, elements),
+        send: (e) =>
+        {
+            e.servicePath = this.servicePath;
+            this.context.sendEntry(e);
+        },
+        sendWait: (e) =>
+        {
+            e.servicePath = this.servicePath;
+            return this.context.sendEntryWait(e);
+        }
+    };
 
     constructor(readonly context: ClientContext, readonly servicePath: string, readonly objectType: string) {}
 
@@ -313,14 +327,7 @@ export class ServiceStub
     {
         const m = this.member(name, "wire");
         const ret = await this.request(type, name);
-        const ts = getElement(ret.elements, "packettime").castNested(DataTypes.structure_t).elements;
-        return {
-            value: this.unpack(getElement(ret.elements, "packet"), m.type!),
-            timestamp: {
-                seconds: (getElement(ts, "seconds").data as BigInt64Array)[0]!,
-                nanoseconds: (getElement(ts, "nanoseconds").data as Int32Array)[0]!
-            }
-        };
+        return unpackWirePacket(this.member_context, m.type!, ret.elements);
     }
 
     peekWireInValue(name: string): Promise<WireValue>
@@ -336,12 +343,376 @@ export class ServiceStub
     async pokeWireOutValue(name: string, value: unknown): Promise<void>
     {
         const m = this.member(name, "wire");
-        const now = Date.now();
-        const time = MessageElement.nested("packettime", DataTypes.structure_t, TIMESPEC, [
-            new MessageElement("seconds", DataTypes.int64_t, BigInt64Array.of(BigInt(Math.floor(now / 1000)))),
-            new MessageElement("nanoseconds", DataTypes.int32_t, Int32Array.of((now % 1000) * 1000000))
-        ]);
-        await this.request(MessageEntryType.WirePokeOutValueReq, name, [time, this.pack("packet", m.type!, value)]);
+        await this.request(MessageEntryType.WirePokeOutValueReq, name, packWirePacket(this.member_context, m.type!, value, timeNow()));
+    }
+
+    getWireDirection(name: string): MemberDirection
+    {
+        return memberDirection(this.member(name, "wire"));
+    }
+
+    /** Create a streaming connection to a wire. Only one connection per wire is allowed */
+    async connectWire(name: string): Promise<WireHandle>
+    {
+        const m = this.member(name, "wire");
+        if (this.wires.has(name)) throw error(MessageErrorType.InvalidOperation, "InvalidOperation", `Wire "${name}" is already connected`);
+
+        // The handle exists before the request because packets can arrive ahead of the response
+        const h = new WireHandle(this.member_context, name, m.type!, memberDirection(m), (x) =>
+        {
+            if (this.wires.get(name) === x) this.wires.delete(name);
+        });
+        this.wires.set(name, h);
+        try
+        {
+            await this.request(MessageEntryType.WireConnectReq, name);
+        }
+        catch (e)
+        {
+            this.wires.delete(name);
+            throw e;
+        }
+        return h;
+    }
+
+    closeWire(handle: WireHandle): Promise<void>
+    {
+        return handle.close();
+    }
+
+    /** Send a new value. Values waiting to be sent are replaced by newer ones */
+    setWireOutValue(handle: WireHandle, value: unknown): void
+    {
+        handle.setOutValue(value);
+    }
+
+    /** The most recent received value and its timestamp. Throws if no valid value has been received */
+    getWireInValue(handle: WireHandle): WireValue
+    {
+        return handle.getInValue();
+    }
+
+    /** The most recent received value and its timestamp, or null if there is no valid value */
+    tryGetWireInValue(handle: WireHandle): WireValue | null
+    {
+        return handle.tryGetInValue();
+    }
+
+    getWireOutValue(handle: WireHandle): WireValue
+    {
+        return handle.getOutValue();
+    }
+
+    tryGetWireOutValue(handle: WireHandle): WireValue | null
+    {
+        return handle.tryGetOutValue();
+    }
+
+    isWireInValueValid(handle: WireHandle): boolean
+    {
+        return handle.inValueValid;
+    }
+
+    isWireOutValueValid(handle: WireHandle): boolean
+    {
+        return handle.outValueValid;
+    }
+
+    /** Wait up to timeout milliseconds, or indefinitely if negative. Returns whether the value is valid */
+    waitWireInValueValid(handle: WireHandle, timeout = -1): Promise<boolean>
+    {
+        return handle.waitInValueValid(timeout);
+    }
+
+    waitWireOutValueValid(handle: WireHandle, timeout = -1): Promise<boolean>
+    {
+        return handle.waitOutValueValid(timeout);
+    }
+
+    /** Received values become invalid after this many milliseconds. Negative for no limit */
+    setWireInValueLifespan(handle: WireHandle, milliseconds: number): void
+    {
+        handle.inValueLifespan = milliseconds;
+    }
+
+    getWireInValueLifespan(handle: WireHandle): number
+    {
+        return handle.inValueLifespan;
+    }
+
+    setWireOutValueLifespan(handle: WireHandle, milliseconds: number): void
+    {
+        handle.outValueLifespan = milliseconds;
+    }
+
+    getWireOutValueLifespan(handle: WireHandle): number
+    {
+        return handle.outValueLifespan;
+    }
+
+    setWireIgnoreInValue(handle: WireHandle, ignore: boolean): void
+    {
+        handle.ignoreInValue = ignore;
+    }
+
+    getWireIgnoreInValue(handle: WireHandle): boolean
+    {
+        return handle.ignoreInValue;
+    }
+
+    addWireValueChangedListener(handle: WireHandle, listener: WireValueChangedHandler): void
+    {
+        handle.listeners.add(listener);
+    }
+
+    removeWireValueChangedListener(handle: WireHandle, listener: WireValueChangedHandler): void
+    {
+        handle.listeners.delete(listener);
+    }
+
+    /** Called if the connection ends other than through closeWire */
+    setWireCloseCallback(handle: WireHandle, callback: WireClosedHandler | null): void
+    {
+        handle.closeCallback = callback;
+    }
+
+    getPipeDirection(name: string): MemberDirection
+    {
+        return memberDirection(this.member(name, "pipe"));
+    }
+
+    isPipeUnreliable(name: string): boolean
+    {
+        return this.member(name, "pipe").modifiers?.includes("unreliable") ?? false;
+    }
+
+    private pipeClosed(h: PipeHandle): void
+    {
+        const endpoints = this.pipes.get(h.memberName);
+        if (endpoints?.get(h.index) === h) endpoints.delete(h.index);
+    }
+
+    private createPipeHandle(m: MemberDefinition, index: number, unreliable: boolean): PipeHandle
+    {
+        return new PipeHandle(this.member_context, m.name, index, m.type!, memberDirection(m), unreliable, (h) => this.pipeClosed(h));
+    }
+
+    /** Connect a pipe endpoint. The default index of -1 lets the service choose one */
+    async connectPipe(name: string, index = -1): Promise<PipeHandle>
+    {
+        const m = this.member(name, "pipe");
+        const unreliable = this.isPipeUnreliable(name);
+        const elements = [new MessageElement("index", DataTypes.int32_t, Int32Array.of(index))];
+        if (unreliable) elements.push(new MessageElement("unreliable", DataTypes.int32_t, Int32Array.of(1)));
+
+        const connecting = { name, index };
+        this.connecting_pipes.push(connecting);
+        try
+        {
+            const ret = await this.request(MessageEntryType.PipeConnectReq, name, elements);
+            const rindex = (getElement(ret.elements, "index").data as Int32Array)[0]!;
+            const ret_unreliable = (findElement(ret.elements, "unreliable")?.data as Int32Array | undefined)?.[0] === 1;
+
+            // Packets can arrive ahead of the response, in which case the endpoint already exists
+            const key = name + "\0" + rindex;
+            const h = this.early_pipes.get(key) ?? this.createPipeHandle(m, rindex, ret_unreliable);
+            this.early_pipes.delete(key);
+            h.unreliable = ret_unreliable;
+
+            let endpoints = this.pipes.get(name);
+            if (!endpoints)
+            {
+                endpoints = new Map();
+                this.pipes.set(name, endpoints);
+            }
+            endpoints.set(rindex, h);
+            return h;
+        }
+        finally
+        {
+            this.connecting_pipes.splice(this.connecting_pipes.indexOf(connecting), 1);
+            if (this.connecting_pipes.length === 0) this.early_pipes.clear();
+        }
+    }
+
+    closePipe(handle: PipeHandle): Promise<void>
+    {
+        return handle.close();
+    }
+
+    /** Resolves with the packet number once sent. Await it to avoid outrunning the connection */
+    sendPipePacket(handle: PipeHandle, value: unknown): Promise<number>
+    {
+        return handle.sendPacket(value);
+    }
+
+    /** Take the next packet. Throws if none are waiting */
+    receivePipePacket(handle: PipeHandle): unknown
+    {
+        return handle.receivePacket();
+    }
+
+    /** Wait up to timeout milliseconds for a packet, or indefinitely if negative */
+    receivePipePacketWait(handle: PipeHandle, timeout = -1): Promise<unknown>
+    {
+        return handle.receivePacketWait(timeout, false);
+    }
+
+    /** Read the next packet without removing it. Throws if none are waiting */
+    peekPipePacket(handle: PipeHandle): unknown
+    {
+        return handle.peekPacket();
+    }
+
+    peekPipePacketWait(handle: PipeHandle, timeout = -1): Promise<unknown>
+    {
+        return handle.receivePacketWait(timeout, true);
+    }
+
+    /** Resolves with `{ value }`, or null instead of throwing if no packet arrives in time */
+    tryReceivePipePacketWait(handle: PipeHandle, timeout = -1, peek = false): Promise<{ value: unknown } | null>
+    {
+        return handle.tryReceivePacketWait(timeout, peek);
+    }
+
+    getPipePacketsAvailable(handle: PipeHandle): number
+    {
+        return handle.available;
+    }
+
+    getPipeIndex(handle: PipeHandle): number
+    {
+        return handle.index;
+    }
+
+    /** Ask the peer to acknowledge each packet this endpoint sends */
+    setPipeRequestPacketAck(handle: PipeHandle, request: boolean): void
+    {
+        handle.requestPacketAck = request;
+    }
+
+    getPipeRequestPacketAck(handle: PipeHandle): boolean
+    {
+        return handle.requestPacketAck;
+    }
+
+    setPipeIgnoreInValue(handle: PipeHandle, ignore: boolean): void
+    {
+        handle.ignoreInValue = ignore;
+    }
+
+    getPipeIgnoreInValue(handle: PipeHandle): boolean
+    {
+        return handle.ignoreInValue;
+    }
+
+    /** The endpoint closes if more packets than this are waiting. Zero for no limit */
+    setPipeMaxReceiveQueue(handle: PipeHandle, packets: number): void
+    {
+        handle.maxReceiveQueue = packets;
+    }
+
+    getPipeMaxReceiveQueue(handle: PipeHandle): number
+    {
+        return handle.maxReceiveQueue;
+    }
+
+    addPipePacketReceivedListener(handle: PipeHandle, listener: PipePacketHandler): void
+    {
+        handle.packetListeners.add(listener);
+    }
+
+    removePipePacketReceivedListener(handle: PipeHandle, listener: PipePacketHandler): void
+    {
+        handle.packetListeners.delete(listener);
+    }
+
+    addPipePacketAckListener(handle: PipeHandle, listener: PipeAckHandler): void
+    {
+        handle.ackListeners.add(listener);
+    }
+
+    removePipePacketAckListener(handle: PipeHandle, listener: PipeAckHandler): void
+    {
+        handle.ackListeners.delete(listener);
+    }
+
+    /** Called if the endpoint ends other than through closePipe */
+    setPipeCloseCallback(handle: PipeHandle, callback: PipeClosedHandler | null): void
+    {
+        handle.closeCallback = callback;
+    }
+
+    dispatchWire(e: MessageEntry): void
+    {
+        const h = this.wires.get(e.memberName);
+        if (!h) return;
+        if (e.entryType === MessageEntryType.WireClosed)
+        {
+            h.remoteClosed();
+            return;
+        }
+        try
+        {
+            h.packetReceived(e);
+        }
+        catch (err)
+        {
+            console.error(`Error receiving packet for wire "${e.memberName}":`, err);
+        }
+    }
+
+    private findPipe(name: string, index: number): PipeHandle | undefined
+    {
+        return this.pipes.get(name)?.get(index);
+    }
+
+    private findOrCreateEarlyPipe(name: string, index: number): PipeHandle | undefined
+    {
+        const found = this.findPipe(name, index);
+        if (found) return found;
+        const key = name + "\0" + index;
+        const early = this.early_pipes.get(key);
+        if (early) return early;
+        if (!this.connecting_pipes.some((x) => x.name === name && (x.index === -1 || x.index === index))) return undefined;
+        const m = this.context.findMember(this.objectType, name);
+        if (!m || m.kind !== "pipe") return undefined;
+        const h = this.createPipeHandle(m, index, this.isPipeUnreliable(name));
+        this.early_pipes.set(key, h);
+        return h;
+    }
+
+    dispatchPipe(e: MessageEntry): void
+    {
+        try
+        {
+            if (e.entryType === MessageEntryType.PipeClosed)
+            {
+                this.findPipe(e.memberName, (getElement(e.elements, "index").data as Int32Array)[0]!)?.remoteClosed();
+            }
+            else if (e.entryType === MessageEntryType.PipePacket)
+            {
+                for (const el of e.elements) this.findOrCreateEarlyPipe(e.memberName, Number(el.elementName))?.packetReceived(el);
+            }
+            else
+            {
+                for (const el of e.elements) this.findPipe(e.memberName, Number(el.elementName))?.ackReceived((el.data as Uint32Array)[0]!);
+            }
+        }
+        catch (err)
+        {
+            console.error(`Error receiving packet for pipe "${e.memberName}":`, err);
+        }
+    }
+
+    /** The object or connection is gone, so close everything streaming through it */
+    closeMembers(): void
+    {
+        for (const h of [...this.wires.values()]) h.remoteClosed();
+        for (const endpoints of [...this.pipes.values()])
+        {
+            for (const h of [...endpoints.values()]) h.remoteClosed();
+        }
     }
 }
 
@@ -637,10 +1008,25 @@ export class ClientContext
         if (is_rr && e.errorSubName) entry.addElement(MessageElement.string("errorsubname", e.errorSubName));
     }
 
-    private sendEntry(e: MessageEntry): void
+    sendEntry(e: MessageEntry): void
+    {
+        this.transportOrThrow().sendMessage(this.newMessage(e));
+    }
+
+    /** Resolves once the entry has been handed to the network */
+    sendEntryWait(e: MessageEntry): Promise<void>
+    {
+        return this.transportOrThrow().sendMessageWait(this.newMessage(e));
+    }
+
+    private transportOrThrow(): ITransportConnection
     {
         if (!this.connected || !this.transport) throw error(MessageErrorType.ConnectionError, "ConnectionError", "Client has been disconnected");
+        return this.transport;
+    }
 
+    private newMessage(e: MessageEntry): Message
+    {
         const m = new Message();
         m.entries.push(e);
         const h = m.header;
@@ -657,7 +1043,7 @@ export class ClientContext
         this.message_number = (this.message_number + 1) & 0xffff;
 
         this.last_sent = Date.now();
-        this.transport.sendMessage(m);
+        return m;
     }
 
     messageReceived(m: Message): void
@@ -691,13 +1077,24 @@ export class ClientContext
             {
                 if (path === e.servicePath || path.startsWith(e.servicePath + "."))
                 {
-                    this.stubs.get(path)!.released = true;
+                    const stub = this.stubs.get(path)!;
+                    stub.released = true;
+                    stub.closeMembers();
                     this.stubs.delete(path);
                 }
             }
             return;
         case MessageEntryType.EventReq:
             this.stubs.get(e.servicePath)?.dispatchEvent(e);
+            return;
+        case MessageEntryType.WirePacket:
+        case MessageEntryType.WireClosed:
+            this.stubs.get(e.servicePath)?.dispatchWire(e);
+            return;
+        case MessageEntryType.PipePacket:
+        case MessageEntryType.PipePacketRet:
+        case MessageEntryType.PipeClosed:
+            this.stubs.get(e.servicePath)?.dispatchPipe(e);
             return;
         case MessageEntryType.CallbackCallReq:
             void this.processCallbackCall(e);
@@ -792,6 +1189,7 @@ export class ClientContext
             p.reject(closed);
         }
         this.pending.clear();
+        for (const stub of this.stubs.values()) stub.closeMembers();
         this.stubs.clear();
         this.transport?.close();
         this.node.deleteEndpoint(this);

@@ -79,6 +79,8 @@ export interface ITransportConnection
     /** True if the transport negotiated the ConnectClientCombined operation */
     readonly useCombinedConnection: boolean;
     sendMessage(m: Message): void;
+    /** Resolves once the message has been handed to the network */
+    sendMessageWait(m: Message): Promise<void>;
     close(): void;
 }
 

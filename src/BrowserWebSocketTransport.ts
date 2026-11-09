@@ -189,6 +189,8 @@ interface QueuedMessage
     /** Set for wire packets. A newer packet for the same wire replaces a queued one */
     wire_key?: string;
     connection_test: boolean;
+    /** Called when the message has been written, or with an error if it will never be */
+    done?: (error?: Error) => void;
 }
 
 /**
@@ -200,6 +202,7 @@ export class SendQueue
     private queue: QueuedMessage[] = [];
     private pumping = false;
     private stopped = false;
+    private current: QueuedMessage | null = null;
 
     constructor(private write: (frame: Uint8Array) => Promise<void> | void, private on_send: () => void, private on_error: () => void) {}
 
@@ -211,6 +214,7 @@ export class SendQueue
             const i = this.queue.findIndex((x) => x.wire_key === m.wire_key);
             if (i >= 0)
             {
+                this.queue[i]!.done?.();
                 this.queue[i] = m;
                 return;
             }
@@ -227,6 +231,10 @@ export class SendQueue
     stop(): void
     {
         this.stopped = true;
+        const closed = connectionError("Transport connection closed");
+        this.current?.done?.(closed);
+        this.current = null;
+        for (const m of this.queue) m.done?.(closed);
         this.queue.length = 0;
     }
 
@@ -238,13 +246,18 @@ export class SendQueue
         {
             while (this.queue.length > 0 && !this.stopped)
             {
-                const { data } = this.queue.shift()!;
+                const item = this.queue.shift()!;
+                this.current = item;
+                const { data } = item;
                 this.on_send();
                 for (let pos = 0; pos < data.length && !this.stopped; pos += MAX_FRAME_SIZE)
                 {
                     const wait = this.write(data.subarray(pos, Math.min(pos + MAX_FRAME_SIZE, data.length)));
                     if (wait) await wait;
                 }
+                if (this.stopped) return;
+                this.current = null;
+                item.done?.();
             }
         }
         catch
@@ -529,6 +542,16 @@ class BrowserWebSocketClientTransport implements ITransportConnection
 
     sendMessage(m: Message): void
     {
+        this.enqueueMessage(m);
+    }
+
+    sendMessageWait(m: Message): Promise<void>
+    {
+        return new Promise<void>((resolve, reject) => this.enqueueMessage(m, (error) => (error ? reject(error) : resolve())));
+    }
+
+    private enqueueMessage(m: Message, done?: (error?: Error) => void): void
+    {
         if (!this.connected) throw connectionError("Transport connection closed");
         const data = serializeMessage(m);
         if (data.length > this.parent.maxMessageSize - 100) throw new RobotRaconteurError(MessageErrorType.ProtocolError, "RobotRaconteur.ProtocolError", "Message larger than maximum message size");
@@ -538,7 +561,8 @@ class BrowserWebSocketClientTransport implements ITransportConnection
         this.send_queue.enqueue({
             data,
             wire_key: entry?.entryType === MessageEntryType.WirePacket ? entry.servicePath + "\0" + entry.memberName : undefined,
-            connection_test: entry?.entryType === MessageEntryType.ConnectionTest
+            connection_test: entry?.entryType === MessageEntryType.ConnectionTest,
+            done
         });
     }
 

@@ -15,6 +15,9 @@
     <h1>Reynard the Robot Client</h1>
     <button onclick="run(connect)">Connect</button>
     <button onclick="run(readState)">Read state</button>
+    <button onclick="run(startStreaming)">Start streaming</button>
+    <button onclick="run(stopStreaming)">Stop streaming</button>
+    <div id="live"></div>
     <button onclick="run(driveForward)">Drive for one second</button>
     <button onclick="run(moveArm)">Move arm</button>
     <button onclick="run(makeRed)">Make red</button>
@@ -48,6 +51,24 @@
             const result = await reynard.peekWireInValue("state");
             show("Robot position: " + result.value.robot_position);
             show("Arm position: " + result.value.arm_position);
+        }
+
+        let stateWire = null;
+
+        async function startStreaming() {
+            if (stateWire) return;
+            stateWire = await reynard.connectWire("state");
+
+            // Called each time Reynard sends a new state
+            reynard.addWireValueChangedListener(stateWire, (handle, state) => {
+                document.getElementById("live").textContent = "Live position: " + state.robot_position;
+            });
+        }
+
+        async function stopStreaming() {
+            if (!stateWire) return;
+            await reynard.closeWire(stateWire);
+            stateWire = null;
         }
 
         async function driveForward() {

@@ -308,12 +308,14 @@ export function clientTests(node: RobotRaconteurNode, port: number, vectors: Vec
     }
 
     // The Core Python test clients, by method name. Methods for members this client does not
-    // implement (pipes, wire connections, memories, and locks) are not ported.
+    // implement (memories and locks) are not ported.
     add("ServiceTestClient TestProperties", withClient(S1, generated.TestProperties));
     add("ServiceTestClient TestFunctions", withClient(S1, generated.TestFunctions));
     add("ServiceTestClient TestEvents", withClient(S1, client1.TestEvents));
     add("ServiceTestClient TestObjRefs", withClient(S1, generated.TestObjRefs));
+    add("ServiceTestClient TestPipes", withClient(S1, client1.TestPipes));
     add("ServiceTestClient TestCallbacks", withClient(S1, client1.TestCallbacks));
+    add("ServiceTestClient TestWires", withClient(S1, client1.TestWires));
     add("ServiceTestClient2 TestWirePeekPoke", withClient(S2, client2.TestWirePeekPoke));
     add("ServiceTestClient2 TestEnums", withClient(S2, client2.TestEnums));
     add("ServiceTestClient2 TestPods", withClient(S2, client2.TestPods));
@@ -326,6 +328,21 @@ export function clientTests(node: RobotRaconteurNode, port: number, vectors: Vec
     add("ServiceTestClient3 TestProperties", withClient(S3, client3.TestProperties));
     add("ServiceTestClient3 TestFunctions", withClient(S3, client3.TestFunctions));
 
+    add("broadcast wires stream values", withClient(S1, client1.BroadcastWireStreaming));
+    add("pipe flow control limits a broadcaster until packets are consumed", withClient(S1, client1.BroadcastPipeFlowControl));
+    add("wires and pipes report misuse", withClient(S1, client1.WireAndPipeMisuse));
+    add("disconnecting closes wires and pipes and runs their callbacks", withClient(S1, async () =>
+    {
+        const c = await node.connectService(url(S1));
+        const w = await c.connectWire("w1");
+        const p = await c.connectPipe("p1");
+        const closed: string[] = [];
+        c.setWireCloseCallback(w, () => closed.push("wire"));
+        c.setPipeCloseCallback(p, () => closed.push("pipe"));
+        await node.disconnectService(c);
+        assert.deepEqual(closed.sort(), ["pipe", "wire"]);
+        assert.equal(await c.tryReceivePipePacketWait(p, 1000), null, "a closed endpoint must not wait");
+    }));
     add("events stop after removing a listener", withClient(S1, client1.EventListenerRemoval));
     add("an error in an event handler does not affect others", withClient(S1, client1.EventHandlerErrors));
     add("callbacks can be asynchronous", withClient(S1, client1.AsyncCallbacks));
