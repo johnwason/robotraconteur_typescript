@@ -16,7 +16,7 @@ You only need a web browser and Python. No Node.js or TypeScript is required.
    ```
 
 2. Open `http://localhost:29201` in a browser to watch Reynard.
-3. Download this repository and double click [examples/reynard.html](examples/reynard.html). Press **Connect**, then try the other buttons.
+3. Download this repository and double click [examples/reynard.html](examples/reynard.html). Press **Connect**, then try the other buttons. Type a message in Reynard's chat box and it appears on your page through an event.
 
 ## Using the library in a web page
 
@@ -58,6 +58,9 @@ The word `await` means "wait for the robot to answer", and it can only be used i
 | Set a wire's output value | `await robot.pokeWireOutValue("name", value)` |
 | Read from a generator | `await robot.callFunctionGenNext(handle)` |
 | Finish or abort a generator | `await robot.callFunctionGenClose(handle)` or `await robot.callFunctionGenAbort(handle)` |
+| Listen for an event | `robot.addEventListener("name", (first, second) => { ... })` |
+| Stop listening | `robot.removeEventListener("name", handler)` |
+| Let the service call your code | `robot.setCallback("name", (first, second) => result)` |
 
 The names come from the service definition of the robot. Plain arrays of numbers such as `[1, 0, 0]` can be used anywhere an array is expected.
 
@@ -149,7 +152,7 @@ The result is plain JSON described by [service-definition.schema.json](service-d
 
 | Bundle | Minified | Gzipped |
 | --- | --- | --- |
-| Client | 46.8 KB | 14.6 KB |
+| Client | 48.6 KB | 15.1 KB |
 | Parser only | 7.2 KB | 2.7 KB |
 | Validators | 8.6 KB | 3.1 KB |
 
@@ -163,7 +166,7 @@ Sending never builds up an unbounded backlog of stale data: one message is sent 
 
 * Client only, using Message Format Version 2. Message Version 4 is not offered during connection.
 * Only `rr+ws` and `rr+wss` connections through the WebSocket class. `tcp` and `rr+tcp` URLs are converted to WebSocket connections, matching RobotRaconteurWeb.
-* Pipes, events, callbacks, memories, wire connections, object locks, discovery, and `rrs+` end-to-end encryption are not implemented. Incoming callback requests are answered with a not-implemented error.
+* Pipes, memories, wire connections, object locks, discovery, and `rrs+` end-to-end encryption are not implemented.
 * Browsers send the origin of the page, and services must allow it. Pages loaded from `file://` and `robotraconteur.com` are allowed by default. Other origins, including `http://localhost`, must be added on the service with `AddWebSocketAllowedOrigin` or a command line option, for example `python -m reynard_the_robot --robotraconteur-tcp-ws-add-origins=http://localhost:8000`. Node.js clients do not send an origin.
 * Assumes a little-endian host, which covers browser platforms.
 
@@ -183,7 +186,7 @@ The tests use the standard service definitions from the Core repository (`test/r
 
 | Area | Source | How it is checked |
 | --- | --- | --- |
-| `TestProperties`, `TestFunctions`, `TestObjRefs`, `TestWirePeekPoke`, `TestEnums`, `TestPods`, `TestGenerators`, `TestNamedArrays`, `TestComplex`, `TestNoLock`, `TestBools`, `TestExceptionParams` | Core `ServiceTestClient.py` and `ServiceTestClient2.py` | Ported under the same names in `test/common`, for the members this client implements |
+| `TestProperties`, `TestFunctions`, `TestEvents`, `TestObjRefs`, `TestCallbacks`, `TestWirePeekPoke`, `TestEnums`, `TestPods`, `TestGenerators`, `TestNamedArrays`, `TestComplex`, `TestNoLock`, `TestBools`, `TestExceptionParams` | Core `ServiceTestClient.py` and `ServiceTestClient2.py` | Ported under the same names in `test/common`, for the members this client implements |
 | `TestProperties` and `TestFunctions` for TestService5 | Core `ServiceTestClient3.py` | Ported |
 | The same operations as made by the Core Python client | Core test clients | Recorded and replayed against the same server, as an independent check |
 | Authentication, attributes | Core and RobotRaconteurWeb client tests | Ported |
@@ -191,7 +194,7 @@ The tests use the standard service definitions from the Core repository (`test/r
 | Service path index encoding | Core `EncodeServicePathIndexTest` | Same vectors |
 | Service definition parsing | Core and RobotRaconteurWeb `RobDef` tests | Compared with the Core parser's reading of each file |
 
-Tests for members this client does not implement (events, pipes, callbacks, wire connections, memories, object and monitor locks) and for Message Version 4 are not ported. Core `MultiDimArray` tests are not applicable because this client has no multidimensional array class. Service definition string conversion and constant value evaluation from `RobDefTest` are not implemented.
+Tests for members this client does not implement (pipes, wire connections, memories, object and monitor locks) and for Message Version 4 are not ported. Core `MultiDimArray` tests are not applicable because this client has no multidimensional array class. Service definition string conversion and constant value evaluation from `RobDefTest` are not implemented.
 
 `npm run fixtures` regenerates the following files:
 

@@ -18,6 +18,7 @@ import { TypeContext } from "../../src/Pack.js";
 import { ServiceDefinition } from "../../src/ServiceDefinition.js";
 import { assert } from "./check.js";
 import * as generated from "./ServiceTestClientGenerated.js";
+import * as client1 from "./ServiceTestClient.js";
 import * as client2 from "./ServiceTestClient2.js";
 import * as client3 from "./ServiceTestClient3.js";
 
@@ -307,10 +308,12 @@ export function clientTests(node: RobotRaconteurNode, port: number, vectors: Vec
     }
 
     // The Core Python test clients, by method name. Methods for members this client does not
-    // implement (events, pipes, callbacks, wire connections, memories, and locks) are not ported.
+    // implement (pipes, wire connections, memories, and locks) are not ported.
     add("ServiceTestClient TestProperties", withClient(S1, generated.TestProperties));
     add("ServiceTestClient TestFunctions", withClient(S1, generated.TestFunctions));
+    add("ServiceTestClient TestEvents", withClient(S1, client1.TestEvents));
     add("ServiceTestClient TestObjRefs", withClient(S1, generated.TestObjRefs));
+    add("ServiceTestClient TestCallbacks", withClient(S1, client1.TestCallbacks));
     add("ServiceTestClient2 TestWirePeekPoke", withClient(S2, client2.TestWirePeekPoke));
     add("ServiceTestClient2 TestEnums", withClient(S2, client2.TestEnums));
     add("ServiceTestClient2 TestPods", withClient(S2, client2.TestPods));
@@ -322,6 +325,12 @@ export function clientTests(node: RobotRaconteurNode, port: number, vectors: Vec
     add("ServiceTestClient2 TestExceptionParams", withClient(S2, client2.TestExceptionParams));
     add("ServiceTestClient3 TestProperties", withClient(S3, client3.TestProperties));
     add("ServiceTestClient3 TestFunctions", withClient(S3, client3.TestFunctions));
+
+    add("events stop after removing a listener", withClient(S1, client1.EventListenerRemoval));
+    add("an error in an event handler does not affect others", withClient(S1, client1.EventHandlerErrors));
+    add("callbacks can be asynchronous", withClient(S1, client1.AsyncCallbacks));
+    add("callback failures are reported to the service", withClient(S1, client1.CallbackFailures));
+    add("events and callbacks are checked against the service definition", withClient(S1, client1.EventAndCallbackMisuse));
 
     add("service information", async () =>
     {

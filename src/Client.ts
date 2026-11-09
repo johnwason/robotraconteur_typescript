@@ -39,6 +39,9 @@ export interface WireValue
     timestamp: { seconds: bigint; nanoseconds: number };
 }
 
+export type EventHandler = (...args: any[]) => unknown;
+export type CallbackHandler = (...args: any[]) => unknown;
+
 /** Handle for a generator returned by callFunction */
 export class GeneratorHandle
 {
@@ -79,6 +82,9 @@ export class ServiceStub
 {
     /** Set when the service has released this object. Requests through a released stub fail */
     released = false;
+
+    private event_listeners = new Map<string, Set<EventHandler>>();
+    private callbacks = new Map<string, CallbackHandler>();
 
     constructor(readonly context: ClientContext, readonly servicePath: string, readonly objectType: string) {}
 
@@ -201,6 +207,106 @@ export class ServiceStub
         this.member(name, "objref");
         const path = this.servicePath + "." + name + (index === undefined ? "" : `[${encodeServicePathIndex(String(index))}]`);
         return this.context.findObjRef(path);
+    }
+
+    /**
+     * Listen for an event. The handler receives the event parameters as arguments. Handlers run
+     * as messages arrive, so long running work should be moved out of the handler.
+     */
+    addEventListener(name: string, handler: EventHandler): void
+    {
+        this.member(name, "event");
+        let listeners = this.event_listeners.get(name);
+        if (!listeners)
+        {
+            listeners = new Set();
+            this.event_listeners.set(name, listeners);
+        }
+        listeners.add(handler);
+    }
+
+    removeEventListener(name: string, handler: EventHandler): void
+    {
+        this.member(name, "event");
+        this.event_listeners.get(name)?.delete(handler);
+    }
+
+    /**
+     * Provide the function that the service calls for a callback member. The handler receives the
+     * callback parameters as arguments and may return a value or a promise. Pass null to clear it.
+     */
+    setCallback(name: string, handler: CallbackHandler | null): void
+    {
+        this.member(name, "callback");
+        if (handler) this.callbacks.set(name, handler);
+        else this.callbacks.delete(name);
+    }
+
+    private unpackParameters(m: MemberDefinition, e: MessageEntry): unknown[]
+    {
+        return m.parameters!.map((p) => this.unpack(getElement(e.elements, p.name), p.type));
+    }
+
+    /** Errors in a handler must not affect the connection or the other handlers */
+    private reportHandlerError(name: string, e: unknown): void
+    {
+        console.error(`Error in handler for event "${name}" of ${this.servicePath}:`, e);
+    }
+
+    dispatchEvent(e: MessageEntry): void
+    {
+        const listeners = this.event_listeners.get(e.memberName);
+        if (!listeners || listeners.size === 0) return;
+        const m = this.context.findMember(this.objectType, e.memberName);
+        if (!m || m.kind !== "event") return;
+
+        let args: unknown[];
+        try
+        {
+            args = this.unpackParameters(m, e);
+        }
+        catch (err)
+        {
+            this.reportHandlerError(e.memberName, err);
+            return;
+        }
+
+        for (const handler of [...listeners])
+        {
+            try
+            {
+                const result = handler(...args) as { catch?: (f: (x: unknown) => void) => void } | undefined;
+                result?.catch?.((err) => this.reportHandlerError(e.memberName, err));
+            }
+            catch (err)
+            {
+                this.reportHandlerError(e.memberName, err);
+            }
+        }
+    }
+
+    /** Run a callback requested by the service and return the response */
+    async callbackCall(e: MessageEntry): Promise<MessageEntry>
+    {
+        const r = new MessageEntry(MessageEntryType.CallbackCallRet, e.memberName);
+        r.servicePath = e.servicePath;
+        r.requestID = e.requestID;
+        try
+        {
+            const m = this.member(e.memberName, "callback");
+            const handler = this.callbacks.get(e.memberName);
+            if (!handler) throw error(MessageErrorType.InvalidOperation, "InvalidOperation", `Callback "${e.memberName}" has not been set`);
+
+            const ret = await handler(...this.unpackParameters(m, e));
+            // Services expect a return element even from void callbacks
+            r.addElement(m.type!.type === "void" ? new MessageElement("return", DataTypes.int32_t, Int32Array.of(0)) : this.pack("return", m.type!, ret));
+        }
+        catch (err)
+        {
+            r.elements = [];
+            this.context.errorToEntry(err, r);
+        }
+        return r;
     }
 
     private async peek(type: MessageEntryType, name: string): Promise<WireValue>
@@ -520,6 +626,17 @@ export class ClientContext
         return err;
     }
 
+    /** Fill in a response entry for a failure in application code */
+    errorToEntry(err: unknown, entry: MessageEntry): void
+    {
+        const e = err as Partial<RobotRaconteurError> & { name?: string; message?: string };
+        const is_rr = err instanceof RobotRaconteurError;
+        entry.error = is_rr ? (e.errorCode as MessageErrorType) : MessageErrorType.RemoteError;
+        entry.addElement(MessageElement.string("errorname", is_rr ? e.errorName! : (e.name ?? "Error")));
+        entry.addElement(MessageElement.string("errorstring", e.message ?? String(err)));
+        if (is_rr && e.errorSubName) entry.addElement(MessageElement.string("errorsubname", e.errorSubName));
+    }
+
     private sendEntry(e: MessageEntry): void
     {
         if (!this.connected || !this.transport) throw error(MessageErrorType.ConnectionError, "ConnectionError", "Client has been disconnected");
@@ -579,18 +696,12 @@ export class ClientContext
                 }
             }
             return;
+        case MessageEntryType.EventReq:
+            this.stubs.get(e.servicePath)?.dispatchEvent(e);
+            return;
         case MessageEntryType.CallbackCallReq:
-            {
-                // Callbacks are not implemented. Respond so that the service does not wait for a timeout
-                const r = new MessageEntry(MessageEntryType.CallbackCallRet, e.memberName);
-                r.servicePath = e.servicePath;
-                r.requestID = e.requestID;
-                r.error = MessageErrorType.NotImplementedError;
-                r.addElement(MessageElement.string("errorname", "RobotRaconteur.NotImplementedError"));
-                r.addElement(MessageElement.string("errorstring", "Callbacks are not implemented"));
-                this.sendEntry(r);
-                return;
-            }
+            void this.processCallbackCall(e);
+            return;
         case MessageEntryType.ServiceClosed:
             this.shutdownConnection();
             return;
@@ -613,6 +724,31 @@ export class ClientContext
                 this.pending.delete(e.requestID);
                 p.resolve(e);
             }
+        }
+    }
+
+    private async processCallbackCall(e: MessageEntry): Promise<void>
+    {
+        const stub = this.stubs.get(e.servicePath);
+        let r: MessageEntry;
+        if (stub)
+        {
+            r = await stub.callbackCall(e);
+        }
+        else
+        {
+            r = new MessageEntry(MessageEntryType.CallbackCallRet, e.memberName);
+            r.servicePath = e.servicePath;
+            r.requestID = e.requestID;
+            this.errorToEntry(error(MessageErrorType.ServiceError, "ServiceError", "Stub not found"), r);
+        }
+        try
+        {
+            this.sendEntry(r);
+        }
+        catch
+        {
+            // The connection closed while the callback was running
         }
     }
 

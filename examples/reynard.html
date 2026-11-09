@@ -36,6 +36,10 @@
 
         async function connect() {
             reynard = await node.connectService(url);
+
+            // Called each time someone types a message in Reynard's chat box
+            reynard.addEventListener("new_message", (message) => show("Chat message: " + message));
+
             show("Connected");
         }
 

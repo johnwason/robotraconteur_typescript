@@ -14,7 +14,7 @@
 
 export { BrowserWebSocketTransport } from "./BrowserWebSocketTransport.js";
 export { ClientContext, GeneratorHandle, ServiceStub } from "./Client.js";
-export type { WireValue } from "./Client.js";
+export type { CallbackHandler, EventHandler, WireValue } from "./Client.js";
 export { RobotRaconteurError } from "./Error.js";
 export { RobotRaconteurNode } from "./Node.js";
 export { NodeID } from "./NodeID.js";
