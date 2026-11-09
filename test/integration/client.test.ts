@@ -37,7 +37,9 @@ node.registerTransport(new BrowserWebSocketTransport(node));
 before(async () =>
 {
     assert.ok(process.env.RR_CORE_TEST, "RR_CORE_TEST must point at the Core test directory");
-    server = spawn("python3", ["-u", join(root, "test/server/rr_test_server.py")], {
+    // RR_TEST_SERVER_SCRIPT selects another server, such as test/server/rr_cpp_test_server.py
+    const server_script = process.env.RR_TEST_SERVER_SCRIPT ?? "test/server/rr_test_server.py";
+    server = spawn("python3", ["-u", join(root, server_script)], {
         env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" },
         stdio: ["pipe", "pipe", "inherit"]
     });

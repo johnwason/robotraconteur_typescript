@@ -1,0 +1,13 @@
+# Adds the Core C++ test server to the development image.
+# Build rr-ts-dev first, then: podman build -f Dockerfile.cpp-test-server -t rr-ts-dev-cpp .
+FROM localhost/rr-ts-dev
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential cmake libboost-all-dev libssl-dev libdbus-1-dev \
+        libusb-1.0-0-dev libbluetooth-dev libgtest-dev \
+    && cmake -S /opt/rr-core -B /opt/rr-core-build \
+        -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DBUILD_GEN=ON \
+    && cmake --build /opt/rr-core-build --target robotraconteur_test_server -j5 \
+    && chmod -R a+rX /opt/rr-core-build
+
+ENV RR_CPP_TEST_SERVER=/opt/rr-core-build/test/out/bin/robotraconteur_test_server

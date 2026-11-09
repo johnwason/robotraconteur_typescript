@@ -120,7 +120,8 @@ function assertClose(actual: unknown, expected: unknown, where: string): void
     }
     if (actual instanceof Map && expected instanceof Map)
     {
-        assert.deepEqual([...actual.keys()], [...expected.keys()], where);
+        // Maps have no defined order. The C++ server returns sorted keys, Python insertion order.
+        assert.deepEqual([...actual.keys()].sort(), [...expected.keys()].sort(), where);
         for (const [k, x] of expected) assertClose(actual.get(k), x, `${where}{${k}}`);
         return;
     }
