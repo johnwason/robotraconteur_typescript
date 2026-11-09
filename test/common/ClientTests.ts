@@ -17,6 +17,9 @@ import { primitivesByName } from "../../src/DataTypes.js";
 import { TypeContext } from "../../src/Pack.js";
 import { ServiceDefinition } from "../../src/ServiceDefinition.js";
 import { assert } from "./check.js";
+import * as generated from "./ServiceTestClientGenerated.js";
+import * as client2 from "./ServiceTestClient2.js";
+import * as client3 from "./ServiceTestClient3.js";
 
 // Replays the operations recorded from the Core Python test client, and the remaining client tests
 // from Core and RobotRaconteurWeb that apply to the implemented members. Runs in Node and browsers.
@@ -303,6 +306,23 @@ export function clientTests(node: RobotRaconteurNode, port: number, vectors: Vec
         }
     }
 
+    // The Core Python test clients, by method name. Methods for members this client does not
+    // implement (events, pipes, callbacks, wire connections, memories, and locks) are not ported.
+    add("ServiceTestClient TestProperties", withClient(S1, generated.TestProperties));
+    add("ServiceTestClient TestFunctions", withClient(S1, generated.TestFunctions));
+    add("ServiceTestClient TestObjRefs", withClient(S1, generated.TestObjRefs));
+    add("ServiceTestClient2 TestWirePeekPoke", withClient(S2, client2.TestWirePeekPoke));
+    add("ServiceTestClient2 TestEnums", withClient(S2, client2.TestEnums));
+    add("ServiceTestClient2 TestPods", withClient(S2, client2.TestPods));
+    add("ServiceTestClient2 TestGenerators", withClient(S2, client2.TestGenerators));
+    add("ServiceTestClient2 TestNamedArrays", withClient(S2, client2.TestNamedArrays));
+    add("ServiceTestClient2 TestComplex", withClient(S2, generated.TestComplex));
+    add("ServiceTestClient2 TestNoLock", withClient(S2, client2.TestNoLock));
+    add("ServiceTestClient2 TestBools", withClient(S2, generated.TestBools));
+    add("ServiceTestClient2 TestExceptionParams", withClient(S2, client2.TestExceptionParams));
+    add("ServiceTestClient3 TestProperties", withClient(S3, client3.TestProperties));
+    add("ServiceTestClient3 TestFunctions", withClient(S3, client3.TestFunctions));
+
     add("service information", async () =>
     {
         const r = await node.connectService(url(S1));
@@ -330,115 +350,6 @@ export function clientTests(node: RobotRaconteurNode, port: number, vectors: Vec
         await node.disconnectService(r);
         await assert.rejects(node.connectService(url(S1), undefined, undefined, "com.robotraconteur.testing.TestService2.subobj"), RobotRaconteurError);
     });
-
-    add("TestService5 properties", withClient(S3, async (r) =>
-    {
-        assert.equal(await r.getProperty("d1"), 8.5515);
-        await r.setProperty("d1", 3.0819);
-        await assert.rejects(r.getProperty("err"), (e: RobotRaconteurError) =>
-        {
-            assert.equal(e.errorName, "RobotRaconteur.InvalidArgument");
-            assert.equal(e.message, "Test message 1");
-            return true;
-        });
-        await assert.rejects(r.setProperty("err", 100), errorNamed("RobotRaconteur.InvalidOperation"));
-    }));
-
-    add("TestService5 functions", withClient(S3, async (r) =>
-    {
-        assert.equal(await r.callFunction("f1"), undefined);
-        await r.callFunction("f2", [247]);
-        assert.equal(await r.callFunction("f3", [1, 2]), 3);
-        await assert.rejects(r.callFunction("err_func"), errorNamed("RobotRaconteur.InvalidOperation"));
-        await assert.rejects(r.callFunction("err_func2"), errorNamed("com.robotraconteur.testing.TestService5.asynctestexp"));
-    }));
-
-    add("generators", withClient(S2, async (r) =>
-    {
-        const g1 = (await r.callFunction("gen_func1")) as GeneratorHandle;
-        assert.deepEqual(await drain(r, g1), Array.from({ length: 16 }, (_, i) => i));
-
-        const g2 = (await r.callFunction("gen_func2", { name: "gen_func2_a_param" })) as GeneratorHandle;
-        assert.deepEqual(await drain(r, g2), Array.from({ length: 16 }, (_, i) => Uint8Array.of(i)));
-
-        const g3 = (await r.callFunction("gen_func4")) as GeneratorHandle;
-        for (let i = 0; i < 3; i++) await r.callFunctionGenNext(g3, []);
-        assert.deepEqual(await r.callFunctionGenNext(g3, Uint8Array.of(2, 3, 4)), Uint8Array.of(5, 6, 7));
-        await r.callFunctionGenAbort(g3);
-        await assert.rejects(r.callFunctionGenNext(g3, []), errorNamed("RobotRaconteur.OperationAborted"));
-
-        const g4 = (await r.callFunction("gen_func4")) as GeneratorHandle;
-        await r.callFunctionGenNext(g4, Uint8Array.of(2, 3, 4));
-        await r.callFunctionGenClose(g4);
-        await assert.rejects(r.callFunctionGenNext(g4, []), (e: RobotRaconteurError) => e.isStopIteration);
-
-        const g5 = (await r.callFunction("gen_func4")) as GeneratorHandle;
-        const seen: unknown[] = [];
-        for (;;)
-        {
-            try
-            {
-                seen.push(await r.callFunctionGenNext(g5, Uint8Array.of(0)));
-            }
-            catch (e)
-            {
-                assert.ok((e as RobotRaconteurError).isStopIteration, String(e));
-                break;
-            }
-        }
-        assert.deepEqual(seen, Array.from({ length: 8 }, (_, i) => Uint8Array.of(i)));
-    }));
-
-    add("wire peek and poke", withClient(S2, async (r) =>
-    {
-        const v = await r.peekWireInValue("peekwire");
-        assert.equal(v.value, 56295674);
-        assert.ok(v.timestamp.seconds > 0n);
-        assert.ok(v.timestamp.nanoseconds >= 0 && v.timestamp.nanoseconds < 1000000000);
-        await r.pokeWireOutValue("pokewire", 75738265);
-        assert.equal((await r.peekWireOutValue("pokewire")).value, 75738265);
-        await r.pokeWireOutValue("pokewire", 8638356);
-        assert.equal((await r.peekWireOutValue("pokewire")).value, 8638356);
-    }));
-
-    add("exception parameters", withClient(S2, async (r) =>
-    {
-        await assert.rejects(r.callFunction("test_exception_params1"), (e: RobotRaconteurError) =>
-        {
-            assert.equal(e.errorName, "RobotRaconteur.InvalidOperation");
-            assert.equal(e.message, "test error");
-            assert.equal(e.errorSubName, "my_error");
-            const p = e.errorParam!.value as Map<string, VarValue>;
-            assert.equal(p.size, 2);
-            assert.equal((p.get("param1")!.value as Int32Array)[0], 10);
-            assert.equal(p.get("param2")!.value, "20");
-            return true;
-        });
-        await assert.rejects(r.callFunction("test_exception_params2"), (e: RobotRaconteurError) =>
-        {
-            assert.equal(e.errorName, "com.robotraconteur.testing.TestService3.test_exception4");
-            assert.equal(e.message, "test error2");
-            assert.equal(e.errorSubName, "my_error2");
-            const p = e.errorParam!.value as Map<string, VarValue>;
-            assert.equal(p.size, 2);
-            assert.equal((p.get("param1")!.value as Int32Array)[0], 30);
-            assert.equal(p.get("param2")!.value, "40");
-            return true;
-        });
-    }));
-
-    add("nolock members under a service object lock", withClient(S2, async (r) =>
-    {
-        const o = await r.getObjRef("nolock_test");
-        const locked = errorNamed("RobotRaconteur.ObjectLockedError");
-        await assert.rejects(o.getProperty("p1"), locked);
-        await o.getProperty("p2");
-        await o.setProperty("p2", 0);
-        await o.getProperty("p3");
-        await assert.rejects(o.setProperty("p3", 0), locked);
-        await assert.rejects(o.callFunction("f1"), locked);
-        assert.equal(await o.callFunction("f2"), 11);
-    }));
 
     add("authentication", async () =>
     {

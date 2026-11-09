@@ -36,7 +36,7 @@
         "test:integration": "npm run build:test && node --test --test-concurrency=1 \"dist-test/test/integration/*.test.js\"",
         "test": "npm run build:test && node --test --test-concurrency=1 \"dist-test/test/unit/*.test.js\" \"dist-test/test/integration/*.test.js\"",
         "size": "node scripts/size-report.mjs",
-        "fixtures": "python3 scripts/generate_robdef_oracle.py && python3 scripts/record_vectors.py"
+        "fixtures": "python3 scripts/generate_robdef_oracle.py && python3 scripts/record_vectors.py && python3 scripts/port_core_client_tests.py"
     },
     "devDependencies": {
         "@types/node": "22.10.2",
