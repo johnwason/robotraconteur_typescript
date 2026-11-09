@@ -118,6 +118,41 @@ Other wire functions are `tryGetWireInValue`, `getWireOutValue`, `tryGetWireOutV
 
 Other pipe functions are `receivePipePacket`, `peekPipePacket`, `peekPipePacketWait`, `tryReceivePipePacketWait`, `getPipePacketsAvailable`, `setPipeRequestPacketAck`, `setPipeIgnoreInValue`, `addPipePacketReceivedListener`, `addPipePacketAckListener`, `setPipeCloseCallback`, `getPipeDirection`, and `isPipeUnreliable`. A pipe can have several endpoints, selected by passing an index to `connectPipe`.
 
+### Staying connected
+
+Networks fail and robots restart. A subscription connects to a service and reconnects whenever the connection is lost, including its wires and pipes. Use one for anything that should keep running:
+
+```js
+const subscription = RobotRaconteur.subscribeService(node, "rr+ws://localhost:29200?service=reynard");
+
+// A wire subscription always holds the most recent value from the service
+const state = subscription.subscribeWire("state");
+await state.waitInValueValid();
+console.log(state.getInValue().value.robot_position);
+
+subscription.addClientConnectListener(() => console.log("Connected"));
+subscription.addClientDisconnectListener(() => console.log("Connection lost"));
+
+// Ask for the client each time it is needed, because reconnecting replaces it
+const reynard = await subscription.getDefaultClientWait(5000);
+await reynard.callFunction("say", ["Hello!"]);
+
+subscription.close();
+```
+
+In a page loaded with `import`, `subscribeService` is a named export. Several URLs for one service can be passed as an array, as they can to `connectService`.
+
+| Object | Functions |
+| --- | --- |
+| Subscription | `getDefaultClient`, `tryGetDefaultClient`, `getDefaultClientWait(timeoutMs)`, `tryGetDefaultClientWait(timeoutMs)`, `getConnectedClients`, `subscribeWire(name, servicePath?)`, `subscribePipe(name, servicePath?, maxRecvPackets?, maxSendBacklog?)`, `subscribeSubObject(servicePath)`, `claimClient`, `releaseClient`, `getServiceURL`, `updateServiceURL`, `close`, `connectRetryDelay`, and add and remove functions for `ClientConnect`, `ClientDisconnect`, and `ClientConnectFailed` listeners |
+| Wire subscription | `getInValue`, `tryGetInValue`, `inValueValid`, `waitInValueValid(timeoutMs)`, `setOutValueAll(value)`, `inValueLifespan`, `ignoreInValue`, `activeConnectionCount`, `addWireValueChangedListener`, `removeWireValueChangedListener`, `close` |
+| Pipe subscription | `receivePacket`, `tryReceivePacket`, `tryReceivePacketWait(timeoutMs, peek?)`, `available`, `sendPacketAll(value)`, `ignoreReceived`, `activeConnectionCount`, `addPipePacketReceivedListener`, `removePipePacketReceivedListener`, `close` |
+| Sub object subscription | `getDefaultClient`, `tryGetDefaultClient`, `getDefaultClientWait(timeoutMs)`, `tryGetDefaultClientWait(timeoutMs)` |
+
+A `servicePath` such as `"*.arm"` names an object below the root object. A connection is retried every 2.5 seconds by default, and `connectRetryDelay` changes this.
+
+Wire values are the latest available, so nothing is lost by reconnecting. Pipe packets sent while disconnected are lost, and a pipe subscription keeps every packet until read unless `maxRecvPackets` is set, in which case the oldest packets are dropped. Finding services by type needs discovery, which is in the [robotraconteur-node](https://github.com/johnwason/robotraconteur_typescript_node) package.
+
 ## Using the library from Node.js
 
 Node.js 22 or newer is required. From this repository folder, run:
@@ -199,7 +234,8 @@ The result is plain JSON described by [service-definition.schema.json](service-d
 
 | Bundle | Minified | Gzipped |
 | --- | --- | --- |
-| Client | 61.4 KB | 18.3 KB |
+| Client, as in `robotraconteur.min.js` | 73.5 KB | 21.1 KB |
+| Client without subscriptions, when bundled and unused | 62.0 KB | 18.4 KB |
 | Parser only | 7.2 KB | 2.7 KB |
 | Validators | 8.6 KB | 3.1 KB |
 
@@ -213,7 +249,7 @@ Sending never builds up an unbounded backlog of stale data: one message is sent 
 
 * Client only, using Message Format Version 2. Message Version 4 is not offered during connection.
 * Only `rr+ws` and `rr+wss` connections through the WebSocket class. `tcp` and `rr+tcp` URLs are converted to WebSocket connections, matching RobotRaconteurWeb.
-* Memories, object locks, discovery, and `rrs+` end-to-end encryption are not implemented.
+* Memories, object locks, and `rrs+` end-to-end encryption are not implemented. Discovery is in the separate [robotraconteur-node](https://github.com/johnwason/robotraconteur_typescript_node) package.
 * Browsers send the origin of the page, and services must allow it. Pages loaded from `file://` and `robotraconteur.com` are allowed by default. Other origins, including `http://localhost`, must be added on the service with `AddWebSocketAllowedOrigin` or a command line option, for example `python -m reynard_the_robot --robotraconteur-tcp-ws-add-origins=http://localhost:8000`. Node.js clients do not send an origin.
 * Assumes a little-endian host, which covers browser platforms.
 

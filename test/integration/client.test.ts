@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url";
 
 import { BrowserWebSocketTransport, RobotRaconteurNode } from "../../src/index.js";
 import { deserializeMessage, Message, serializeMessage } from "../../src/Message.js";
+import { subscriptionTests, TcpProxy } from "../common/SubscriptionTests.js";
 import { clientTests, Vectors } from "../common/ClientTests.js";
 import { LFSRSeqGen, newRandomTestMessage, newTestMessage } from "../common/MessageTestUtil.js";
 
@@ -30,6 +31,7 @@ const vectors = JSON.parse(readFileSync(join(root, "test/fixtures/recorded_vecto
 
 let server: ChildProcess;
 let port = 0;
+let proxy: TcpProxy;
 const node = new RobotRaconteurNode();
 node.requestTimeout = 30000;
 node.registerTransport(new BrowserWebSocketTransport(node));
@@ -55,10 +57,13 @@ before(async () =>
         });
         server.on("exit", () => reject(new Error("Test server exited")));
     });
+    proxy = new TcpProxy(port);
+    await proxy.start();
 }, { timeout: 60000 });
 
 after(async () =>
 {
+    proxy.close();
     await node.shutdown();
     server.removeAllListeners("exit");
     server.kill();
@@ -104,6 +109,14 @@ for (const use_stream of [true, false])
         }
     });
 }
+
+test("subscriptions over rr+ws", { timeout: 120000 }, async (t) =>
+{
+    for (const c of subscriptionTests(node, proxy, port, "rr+ws", (n) => new BrowserWebSocketTransport(n)))
+    {
+        await t.test(c.name, () => c.run());
+    }
+});
 
 test("messages are byte compatible with the Core library", { timeout: 120000 }, () =>
 {

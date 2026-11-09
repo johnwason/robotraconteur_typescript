@@ -17,5 +17,6 @@ async function report(label, contents)
 }
 
 await report("client (full index)", 'export * from "./index.js";');
+await report("client without subscriptions", 'export { BrowserWebSocketTransport, RobotRaconteurNode } from "./index.js";');
 await report("parser only", 'export { parseServiceDefinition } from "./ServiceDefinition.js";');
 await report("validators", 'export * from "./ServiceDefinitionValidators.js";');

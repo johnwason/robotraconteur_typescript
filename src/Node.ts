@@ -36,6 +36,7 @@ export class RobotRaconteurNode
     private transports: Transport[] = [];
     private endpoints = new Map<number, Endpoint>();
     private clients = new Set<ClientContext>();
+    private shutdown_hooks = new Set<() => void>();
 
     registerTransport(transport: Transport): void
     {
@@ -50,9 +51,14 @@ export class RobotRaconteurNode
         return d;
     }
 
-    /** Connect to a service and return the client for the root object */
-    async connectService(url: string, username?: string, credentials?: Map<string, unknown> | Record<string, unknown>, objectType?: string): Promise<ServiceStub>
+    /**
+     * Connect to a service and return the client for the root object. Several candidate URLs for
+     * one service can be passed, and the first that connects is used.
+     */
+    async connectService(url: string | string[], username?: string, credentials?: Map<string, unknown> | Record<string, unknown>, objectType?: string): Promise<ServiceStub>
     {
+        if (typeof url !== "string") return this.connectCandidates(url, username, credentials, objectType);
+
         parseConnectionUrl(url);
         const transport = this.transports.find((x) => x.canConnectService(url));
         if (!transport)
@@ -72,6 +78,34 @@ export class RobotRaconteurNode
         }
     }
 
+    private connectCandidates(urls: string[], username?: string, credentials?: Map<string, unknown> | Record<string, unknown>, objectType?: string): Promise<ServiceStub>
+    {
+        if (urls.length === 0) return Promise.reject(new RobotRaconteurError(MessageErrorType.ConnectionError, "RobotRaconteur.ConnectionError", "No URLs to connect to"));
+        return new Promise<ServiceStub>((resolve, reject) =>
+        {
+            let connected = false;
+            let failures = 0;
+            let first_error: unknown;
+            for (const url of urls)
+            {
+                this.connectService(url, username, credentials, objectType).then((stub) =>
+                {
+                    if (connected)
+                    {
+                        void this.disconnectService(stub).catch(() => undefined);
+                        return;
+                    }
+                    connected = true;
+                    resolve(stub);
+                }, (e) =>
+                {
+                    if (failures === 0) first_error = e;
+                    if (++failures === urls.length) reject(first_error);
+                });
+            }
+        });
+    }
+
     async disconnectService(stub: ServiceStub): Promise<void>
     {
         await stub.context.close();
@@ -80,8 +114,21 @@ export class RobotRaconteurNode
     /** Close all clients and transports */
     async shutdown(): Promise<void>
     {
+        // Subscriptions first, as they would otherwise reconnect the clients closed below
+        for (const h of [...this.shutdown_hooks]) h();
         await Promise.all([...this.clients].map((c) => c.close()));
         this.transports.forEach((t) => t.close());
+    }
+
+    /** Run a function when the node shuts down, before its clients are closed */
+    addShutdownHook(hook: () => void): void
+    {
+        this.shutdown_hooks.add(hook);
+    }
+
+    removeShutdownHook(hook: () => void): void
+    {
+        this.shutdown_hooks.delete(hook);
     }
 
     private registerClient(c: ClientContext): void

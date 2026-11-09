@@ -39,5 +39,16 @@ export type {
     TypeDefinition,
     UsingDefinition
 } from "./ServiceDefinition.js";
+export { PipeSubscription, ServiceSubscription, SubObjectSubscription, subscribeService, WireSubscription } from "./Subscription.js";
+export type {
+    ClientConnectFailedHandler,
+    ClientConnectionHandler,
+    ConnectedClient,
+    PipePacketSubscriptionHandler,
+    ServiceSubscriptionClient,
+    ServiceSubscriptionClientID,
+    ServiceSubscriptionOptions,
+    WireValueSubscriptionHandler
+} from "./Subscription.js";
 export { parseConnectionUrl } from "./Transport.js";
 export type { Endpoint, ITransportConnection, ParsedConnectionUrl, Transport } from "./Transport.js";

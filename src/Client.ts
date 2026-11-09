@@ -739,6 +739,7 @@ export class ClientContext
     private last_sent = Date.now();
     private last_received = Date.now();
     private closing = false;
+    private close_listeners = new Set<() => void>();
 
     constructor(readonly node: RobotRaconteurNode)
     {
@@ -1193,6 +1194,30 @@ export class ClientContext
         this.stubs.clear();
         this.transport?.close();
         this.node.deleteEndpoint(this);
+
+        for (const l of [...this.close_listeners])
+        {
+            try
+            {
+                l();
+            }
+            catch (e)
+            {
+                console.error("Error in client close listener:", e);
+            }
+        }
+        this.close_listeners.clear();
+    }
+
+    /** Notify when this client is disconnected for any reason */
+    addCloseListener(listener: () => void): void
+    {
+        this.close_listeners.add(listener);
+    }
+
+    removeCloseListener(listener: () => void): void
+    {
+        this.close_listeners.delete(listener);
     }
 
     /** Disconnect from the service */

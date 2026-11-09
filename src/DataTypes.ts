@@ -121,6 +121,7 @@ export const enum MessageErrorType
     MemberNotFound,
     DataTypeError = 12,
     InvalidOperation = 17,
+    InvalidArgument = 18,
     RemoteError = 100,
     RequestTimeout,
     ReadOnlyMember = 102,
