@@ -41,7 +41,7 @@ export class TcpProxy
                 return;
             }
             this.accepted++;
-            const remote = connect({ host: "localhost", port: this.target });
+            const remote = connect({ host: "127.0.0.1", port: this.target });
             for (const [a, b] of [[client, remote], [remote, client]] as const)
             {
                 this.sockets.add(a);
