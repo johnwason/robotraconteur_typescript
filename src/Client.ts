@@ -775,6 +775,12 @@ export class ClientContext
     readonly types: TypeContext;
 
     private transport: ITransportConnection | null = null;
+
+    /** The transport connection in use, for transports that report on their own connections */
+    get transportConnection(): ITransportConnection | null
+    {
+        return this.transport;
+    }
     private stubs = new Map<string, ServiceStub>();
     private pending = new Map<number, PendingRequest>();
     private request_number = 0;
