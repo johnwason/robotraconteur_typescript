@@ -283,6 +283,26 @@ export function subscriptionTests(node: RobotRaconteurNode, proxy: TcpProxy, tar
         await node.disconnectService(c);
     });
 
+    add("soft close disconnects, keeps members, and can start again", async (s) =>
+    {
+        let disconnected = 0;
+        s.addClientDisconnectListener(() => disconnected++);
+        const first = await s.getDefaultClientWait(TIMEOUT);
+        const w = s.subscribeWire("w1");
+        await until(() => w.activeConnectionCount === 1, "wire connection");
+
+        s.softClose();
+        await until(() => s.tryGetDefaultClient() === null && !first.context.connected, "disconnection");
+        await until(() => disconnected === 1, "disconnect notification");
+        assert.equal(s.getClientIDs().length, 0);
+        assert.throws(() => s.getServiceURL(), RobotRaconteurError);
+
+        s.initServiceURL([url()]);
+        const second = await s.getDefaultClientWait(TIMEOUT);
+        assert.notEqual(second, first);
+        await until(() => w.activeConnectionCount === 1, "wire to resume");
+    });
+
     add("the URL can be changed", async (s) =>
     {
         const first = await s.getDefaultClientWait(TIMEOUT);

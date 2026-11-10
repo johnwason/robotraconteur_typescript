@@ -89,6 +89,7 @@ interface ClientState extends ServiceSubscriptionClient
     client: ServiceStub | null;
     error_count: number;
     claimed: boolean;
+    removed: boolean;
     wake: Waiters;
 }
 
@@ -156,14 +157,14 @@ export class ServiceSubscription
         }
         if (maxConnections >= 0 && this.clients.size >= maxConnections) return;
 
-        const state: ClientState = { ...c, client: null, error_count: 0, claimed: false, wake: new Waiters() };
+        const state: ClientState = { ...c, client: null, error_count: 0, claimed: false, removed: false, wake: new Waiters() };
         this.clients.set(key, state);
         void this.runClient(key, state);
     }
 
     private async runClient(key: string, c: ClientState): Promise<void>
     {
-        while (!this.closed)
+        while (!this.closed && !c.removed)
         {
             let stub: ServiceStub;
             try
@@ -172,19 +173,19 @@ export class ServiceSubscription
             }
             catch (e)
             {
-                if (this.closed) return;
+                if (this.closed || c.removed) return;
                 callListeners(this.failed_listeners, this, this.clientId(c), c.urls, e);
                 c.error_count++;
                 if (this.connect_error_limit >= 0 && this.service_url === null && c.error_count > this.connect_error_limit)
                 {
-                    this.clients.delete(key);
+                    if (this.clients.get(key) === c) this.clients.delete(key);
                     return;
                 }
                 await c.wake.wait(this.connectRetryDelay);
                 continue;
             }
 
-            if (this.closed)
+            if (this.closed || c.removed)
             {
                 void this.node.disconnectService(stub).catch(() => undefined);
                 return;
@@ -223,7 +224,7 @@ export class ServiceSubscription
             for (const w of this.wires) w.clientDisconnected(stub);
             for (const p of this.pipes) p.clientDisconnected(stub);
 
-            if (!this.closed) await c.wake.wait(this.connectRetryDelay);
+            if (!this.closed && !c.removed) await c.wake.wait(this.connectRetryDelay);
         }
     }
 
@@ -390,6 +391,41 @@ export class ServiceSubscription
     {
         if (m instanceof WireSubscription) this.wires.delete(m);
         else this.pipes.delete(m);
+    }
+
+    private dropClient(key: string, c: ClientState): void
+    {
+        c.removed = true;
+        c.claimed = false;
+        this.clients.delete(key);
+        // Disconnecting wakes the client through its close listener, so that disconnect handlers still run
+        if (c.client) void this.node.disconnectService(c.client).catch(() => c.wake.notifyAll());
+        else c.wake.notifyAll();
+    }
+
+    /** The clients being connected or kept connected. Used by sources of services such as discovery */
+    getClientIDs(): ServiceSubscriptionClientID[]
+    {
+        return [...this.clients.values()].map((c) => this.clientId(c));
+    }
+
+    /** Stop using a client, unless it has been claimed. Used by sources of services such as discovery */
+    removeClient(id: ServiceSubscriptionClientID): void
+    {
+        const key = `${id.nodeID.toString()}/${id.serviceName}`;
+        const c = this.clients.get(key);
+        if (c && !c.claimed) this.dropClient(key, c);
+    }
+
+    /**
+     * Disconnect all clients, including claimed ones, and forget where to connect, but stay open. Wire
+     * and pipe subscriptions are kept, and resume when clients are added again.
+     */
+    softClose(): void
+    {
+        if (this.closed) return;
+        this.service_url = null;
+        for (const [key, c] of [...this.clients]) this.dropClient(key, c);
     }
 
     /** Stop reconnecting and disconnect all clients, except any that have been claimed */
