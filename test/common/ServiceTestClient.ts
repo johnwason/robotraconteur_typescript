@@ -14,6 +14,7 @@
 
 import { RobotRaconteurError, ServiceStub } from "../../src/index.js";
 import { assert } from "./check.js";
+import { getTestVector } from "./TestVectors.js";
 import { ca, errorNamed, md, sleep } from "./TestUtil.js";
 
 // Port of the event and callback tests in the Core Python ServiceTestClient.py, followed by
@@ -141,7 +142,7 @@ export async function TestPipes(r: ServiceStub): Promise<void>
 
     await r.sendPipePacket(e1, [1, 2, 3, 4]);
     await r.sendPipePacket(e1, [5, 6, 7, 8]);
-    await r.sendPipePacket(e1, [-1, -2, -3, -5.32]);
+    await r.sendPipePacket(e1, getTestVector("ts1.client.d3", "double"));
     await r.sendPipePacket(e2, [3.21]);
     await r.sendPipePacket(e2, [4.72]);
     await r.sendPipePacket(e2, [72.34]);
@@ -154,7 +155,7 @@ export async function TestPipes(r: ServiceStub): Promise<void>
 
     ca(r.receivePipePacket(e1), [1, 2, 3, 4]);
     ca(await r.receivePipePacketWait(e1, 1000), [5, 6, 7, 8]);
-    ca(await r.receivePipePacketWait(e1, 1000), [-1, -2, -3, -5.32]);
+    ca(await r.receivePipePacketWait(e1, 1000), getTestVector("ts1.client.d3", "double"));
     ca(r.receivePipePacket(e2), [3.21]);
     ca(await r.receivePipePacketWait(e2, 1000), [4.72]);
     ca(await r.receivePipePacketWait(e2, 1000), [72.34]);
@@ -200,11 +201,11 @@ export async function TestWires(r: ServiceStub): Promise<void>
     r.setWireOutValue(w2, { mydat: [0] });
     r.setWireOutValue(w3, md(Int32Array.of(0), [1, 1]));
 
-    const a1 = [-2.377683e+02, -6.760080e-08, 4.191315e-18, -4.621977e+07, -1.570323e+03, -4.163378e+03, -2.506701e+13, -4.755701e+18, -1.972380e-19, 1.791593e-11];
+    const a1 = getTestVector("ts1.client.d1", "double");
     r.setWireOutValue(w1, a1);
-    const a2 = [-1.014645e-21, 4.743740e+11, 5.804886e-04, 2.963852e-20, 4.277621e-21, -1.168151e+13, -2.638708e-18, -5.123312e+14, 1.261123e-05, 2.552626e-10];
+    const a2 = getTestVector("ts1.client.d2", "double");
     r.setWireOutValue(w2, { mydat: a2 });
-    const a3 = md(Int32Array.of(2058500854, -611248192, 197490486, -517717939, -513450368, 296469979, 645365194, 2043654604, -1672941174, 710030901), [2, 5]);
+    const a3 = md(Int32Array.from(getTestVector("ts1.client.i3", "int32")), getTestVector("ts1.client.i3.dims", "uint32"));
     r.setWireOutValue(w3, a3);
 
     await sleep(500);

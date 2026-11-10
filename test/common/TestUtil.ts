@@ -58,9 +58,9 @@ function isSeq(x: any): boolean
     return Array.isArray(x) || ArrayBuffer.isView(x);
 }
 
-function close(a: any, b: any, where: string): void
+function close(a: any, b: any, where: string, exact = false): void
 {
-    if (typeof a === "number" && typeof b === "number")
+    if (typeof a === "number" && typeof b === "number" && !exact)
     {
         if (a !== b && Math.abs(a - b) > 1e-7 * Math.abs(b)) throw new Error(`${where}: ${a} != ${b}`);
         return;
@@ -69,29 +69,40 @@ function close(a: any, b: any, where: string): void
     if (a != b) throw new Error(`${where}: ${String(a)} != ${String(b)}`);
 }
 
-export function ca(actual: any, expected: any, where = "value"): void
+function compareArrays(actual: any, expected: any, where: string, exact: boolean): void
 {
     if (isMd(actual) || isMd(expected))
     {
         assert.ok(isMd(actual) && isMd(expected), `${where}: multidimensional array mismatch`);
         assert.deepEqual(Array.from(actual.dims as Uint32Array), Array.from(expected.dims as Uint32Array), `${where} dims`);
-        ca(actual.array, expected.array, where);
+        compareArrays(actual.array, expected.array, where, exact);
         return;
     }
     if (isSeq(actual) || isSeq(expected))
     {
         assert.ok(isSeq(actual) && isSeq(expected), `${where}: array mismatch`);
         assert.equal(actual.length, expected.length, `${where} length`);
-        for (let i = 0; i < actual.length; i++) ca(actual[i], expected[i], `${where}[${i}]`);
+        for (let i = 0; i < actual.length; i++) compareArrays(actual[i], expected[i], `${where}[${i}]`, exact);
         return;
     }
     if (typeof actual === "object" && actual !== null && "real" in actual)
     {
-        close(actual.real, expected.real, where + ".real");
-        close(actual.imag, expected.imag, where + ".imag");
+        close(actual.real, expected.real, where + ".real", exact);
+        close(actual.imag, expected.imag, where + ".imag", exact);
         return;
     }
-    close(actual, expected, where);
+    close(actual, expected, where, exact);
+}
+
+export function ca(actual: any, expected: any, where = "value"): void
+{
+    compareArrays(actual, expected, where, false);
+}
+
+/** Exact comparison, like numpy.testing.assert_array_equal, which the Core tests use for integer arrays */
+export function cae(actual: any, expected: any, where = "value"): void
+{
+    compareArrays(actual, expected, where, true);
 }
 
 /** Python equality: exact, but bigints and booleans compare with numbers */

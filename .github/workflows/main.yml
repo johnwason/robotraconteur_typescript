@@ -31,6 +31,15 @@ jobs:
         repository: robotraconteur/robotraconteur
         ref: ${{ env.RR_CORE_VERSION }}
         path: rr-core
+    - name: Checkout Robot Raconteur Core test vectors
+      uses: actions/checkout@v4
+      with:
+        repository: robotraconteur/robotraconteur
+        ref: master
+        path: rr-core-master
+        sparse-checkout: test/data
+    - name: Check test vectors against Core
+      run: python3 scripts/check_test_vectors.py test/data/test_vectors.bin rr-core-master/test/data
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
