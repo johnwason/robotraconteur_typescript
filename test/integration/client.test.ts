@@ -52,7 +52,7 @@ before(async () =>
         server.stdout!.on("data", (d: Buffer) =>
         {
             output += d.toString();
-            const m = /PORT (\d+)\n/.exec(output);
+            const m = /PORT (\d+)\r?\n/.exec(output);
             if (m) resolve(Number(m[1]));
         });
         server.on("exit", () => reject(new Error("Test server exited")));
