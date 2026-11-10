@@ -130,7 +130,8 @@ export const enum MessageErrorType
     ValueNotSet = 106,
     AbortOperation = 107,
     OperationAborted,
-    StopIteration
+    StopIteration,
+    AuthenticationError = 150
 }
 
 export const enum TransportCapabilityCode

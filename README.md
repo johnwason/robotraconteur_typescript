@@ -238,8 +238,8 @@ The result is plain JSON described by [service-definition.schema.json](service-d
 
 | Bundle | Minified | Gzipped |
 | --- | --- | --- |
-| Client, as in `robotraconteur.min.js` | 77.1 KB | 22.2 KB |
-| Client without subscriptions, when bundled and unused | 62.9 KB | 18.7 KB |
+| Client, as in `robotraconteur.min.js` | 78.0 KB | 22.5 KB |
+| Client without subscriptions, when bundled and unused | 63.8 KB | 19.0 KB |
 | Parser only | 7.2 KB | 2.7 KB |
 | Validators | 8.6 KB | 3.1 KB |
 

@@ -45,6 +45,28 @@ export interface SocketEvents
 
 export type SocketOpener = (events: SocketEvents) => Promise<SocketAdapter>;
 
+/** The node that answered a STARTTLS request, which its certificate must identify */
+export interface TlsPeer
+{
+    nodeID: NodeID;
+    nodeName: string;
+    /** True if the server agreed to check a client certificate */
+    mutualAuth: boolean;
+}
+
+/**
+ * Switch the connection to TLS after STARTTLS, and verify the server. Returns the socket to use
+ * from then on, which must deliver its data to the same events.
+ */
+export type TlsStarter = (events: SocketEvents, peer: TlsPeer) => Promise<SocketAdapter>;
+
+export interface StreamTlsOptions
+{
+    start: TlsStarter;
+    /** Ask the server to check a client certificate */
+    mutualAuth: boolean;
+}
+
 /** The settings and owner of the connections of a stream transport */
 export interface StreamTransportParent
 {
@@ -173,12 +195,16 @@ export class StreamClientConnection implements ITransportConnection
 
     constructor(private parent: StreamTransportParent, private target_nodeid: NodeID, private target_nodename: string, private endpoint: Endpoint) {}
 
-    async connect(open: SocketOpener): Promise<void>
+    /** True once TLS is in use */
+    secure = false;
+
+    async connect(open: SocketOpener, tls?: StreamTlsOptions): Promise<void>
     {
-        this.socket = await open({
+        const events: SocketEvents = {
             onData: (frame) => this.dataReceived(frame),
             onClose: () => this.close()
-        });
+        };
+        this.socket = await open(events);
 
         this.send_queue = new SendQueue((frame) => this.socket.write(frame), () =>
         {
@@ -188,6 +214,7 @@ export class StreamClientConnection implements ITransportConnection
 
         try
         {
+            if (tls) await this.startTls(tls, events);
             await this.createConnection();
         }
         catch (e)
@@ -201,23 +228,12 @@ export class StreamClientConnection implements ITransportConnection
         (this.heartbeat as unknown as { unref?: () => void }).unref?.();
     }
 
-    private async createConnection(): Promise<void>
+    /** Send a stream operation and wait for its reply, failing if the reply reports an error */
+    private async streamOp(m: Message, timeout_message: string, failure_message: string): Promise<Message>
     {
-        const m = new Message();
-        m.header.senderNodeID = this.parent.node.nodeID;
-        m.header.senderNodeName = this.parent.node.nodeName;
-        m.header.receiverNodeID = this.target_nodeid;
-        m.header.receiverNodeName = this.target_nodename;
-
-        // Message Version 4 is not offered, so the service will continue to use Message Version 2
-        const mm = new MessageEntry(MessageEntryType.StreamOp, "CreateConnection");
-        const caps = (TransportCapabilityCode.Message2BasicPage | TransportCapabilityCode.Message2BasicEnable | TransportCapabilityCode.Message2BasicConnectCombined) >>> 0;
-        mm.addElement(new MessageElement("capabilities", DataTypes.uint32_t, Uint32Array.of(caps)));
-        m.entries.push(mm);
-
         const ret = await new Promise<Message>((resolve, reject) =>
         {
-            const timer = setTimeout(() => reject(connectionError("Timed out creating connection")), 10000);
+            const timer = setTimeout(() => reject(connectionError(timeout_message)), 10000);
             this.streamop_wait = {
                 resolve: (x) =>
                 {
@@ -237,8 +253,54 @@ export class StreamClientConnection implements ITransportConnection
         if (entry.error !== MessageErrorType.None && entry.error !== MessageErrorType.ProtocolError)
         {
             const s = findElement(entry.elements, "errorstring");
-            throw new RobotRaconteurError(entry.error, findElement(entry.elements, "errorname")?.castString() ?? "RobotRaconteur.ConnectionError", s?.castString() ?? "Could not create connection");
+            throw new RobotRaconteurError(entry.error, findElement(entry.elements, "errorname")?.castString() ?? "RobotRaconteur.ConnectionError", s?.castString() ?? failure_message);
         }
+        return ret;
+    }
+
+    /** Ask the server to switch to TLS, as Core does before creating the connection */
+    private async startTls(tls: StreamTlsOptions, events: SocketEvents): Promise<void>
+    {
+        const m = new Message();
+        m.header.senderNodeID = this.parent.node.nodeID;
+        m.header.senderNodeName = this.parent.node.nodeName;
+        m.header.receiverNodeID = this.target_nodeid;
+        m.header.receiverNodeName = this.target_nodename;
+        const mm = new MessageEntry(MessageEntryType.StreamOp, "STARTTLS");
+        if (tls.mutualAuth) mm.addElement(MessageElement.string("mutualauth", "true"));
+        m.entries.push(mm);
+
+        const ret = await this.streamOp(m, "Timed out starting TLS", "Could not start TLS");
+        const sender_id = ret.header.senderNodeID;
+        const sender_name = ret.header.senderNodeName;
+        const any_target = this.target_nodeid.isAnyNode;
+        // The same checks as Core, so that the certificate is checked against the node that was requested
+        const matches = (any_target && this.target_nodename === "")
+            || (!any_target && this.target_nodeid.equals(sender_id))
+            || (any_target && sender_name === this.target_nodename);
+        if (!matches) throw connectionError("Could not create TLS connection");
+
+        const mutual = findElement(ret.entries[0]!.elements, "mutualauth")?.castString() === "true";
+        this.socket = await tls.start(events, { nodeID: sender_id, nodeName: sender_name, mutualAuth: tls.mutualAuth && mutual });
+        this.secure = true;
+    }
+
+    private async createConnection(): Promise<void>
+    {
+        const m = new Message();
+        m.header.senderNodeID = this.parent.node.nodeID;
+        m.header.senderNodeName = this.parent.node.nodeName;
+        m.header.receiverNodeID = this.target_nodeid;
+        m.header.receiverNodeName = this.target_nodename;
+
+        // Message Version 4 is not offered, so the service will continue to use Message Version 2
+        const mm = new MessageEntry(MessageEntryType.StreamOp, "CreateConnection");
+        const caps = (TransportCapabilityCode.Message2BasicPage | TransportCapabilityCode.Message2BasicEnable | TransportCapabilityCode.Message2BasicConnectCombined) >>> 0;
+        mm.addElement(new MessageElement("capabilities", DataTypes.uint32_t, Uint32Array.of(caps)));
+        m.entries.push(mm);
+
+        const ret = await this.streamOp(m, "Timed out creating connection", "Could not create connection");
+        const entry = ret.entries[0]!;
 
         if ((this.target_nodename !== "" && this.target_nodename !== ret.header.senderNodeName)
             || (!this.target_nodeid.isAnyNode && !this.target_nodeid.equals(ret.header.senderNodeID)))
