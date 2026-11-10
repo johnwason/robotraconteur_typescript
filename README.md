@@ -144,7 +144,7 @@ await reynard.callFunction("say", ["Hello!"]);
 subscription.close();
 ```
 
-In a page loaded with `import`, `subscribeService` is a named export. Several URLs for one service can be passed as an array, as they can to `connectService`.
+In a page loaded with `import`, `subscribeService` is a named export. Several URLs for one service can be passed as an array, as they can to `connectService`. As in Core, the preferred URL is tried first and each of the others 15 ms later, and the first to connect is used. `RobotRaconteurNode.selectRemoteNodeURL` gives the order: TLS (`rrs+tcp`) before plain TCP, each preferring loopback and then link-local addresses.
 
 | Object | Functions |
 | --- | --- |
