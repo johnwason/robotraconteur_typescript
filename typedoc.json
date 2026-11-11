@@ -31,5 +31,6 @@
     "navigation": {
         "includeCategories": false,
         "includeGroups": true
-    }
+    },
+    "treatWarningsAsErrors": true
 }
