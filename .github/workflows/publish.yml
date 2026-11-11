@@ -1,0 +1,41 @@
+# Stages a release on npm when a GitHub release is published in the robotraconteur organization, after the
+# CI tests pass. The release's tag, such as v0.1.0, must match the version in package.json.
+name: Publish
+
+on:
+  release:
+    types:
+    - published
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    if: github.repository_owner == 'robotraconteur'
+    uses: ./.github/workflows/main.yml
+  publish:
+    needs: test
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22.14.0
+        registry-url: https://registry.npmjs.org
+    - name: Check that the tag matches the package version
+      run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
+    - name: Install Node.js dependencies
+      run: npm ci --ignore-scripts
+    - name: Install an npm with staged publishing
+      run: npm install -g npm@11.21.2
+    - name: Stage the release
+      # prepack builds the package. A maintainer approves the staged version with 2FA, on npmjs.com
+      # under Staged Packages or with npm stage approve, before it is published
+      run: npm stage publish --provenance --access public
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

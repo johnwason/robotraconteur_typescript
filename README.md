@@ -4,7 +4,14 @@
 
 A small, dependency-free TypeScript client for [Robot Raconteur](https://github.com/robotraconteur/robotraconteur) that runs in the browser and communicates over WebSockets.
 
-**Status:** experimental. The client covers properties, functions, generators, objects, events, callbacks, wires, pipes, object and monitor locks, and subscriptions. Memories are not supported.
+> [!WARNING]
+> This package is new, and its API may change in any release before 1.0. Pin an exact version, such as `robotraconteur@0.1.0`, and read the [changelog](CHANGELOG.md) before upgrading.
+
+The client covers properties, functions, generators, objects, events, callbacks, wires, pipes, object and monitor locks, and subscriptions. Memories are not supported.
+
+```
+npm install robotraconteur
+```
 
 ## Quick start
 
@@ -22,7 +29,7 @@ You only need a web browser and Python. No Node.js or TypeScript is required.
 
 ## Documentation
 
-The [documentation](https://johnwason.github.io/robotraconteur_typescript/) has a guide and an API reference. The guide pages are also in this repository:
+The [documentation](https://robotraconteur.github.io/robotraconteur_typescript/) has a guide and an API reference. The guide pages are also in this repository:
 
 - [Getting started](docs/guide/getting-started.md): in a web page, with a bundler, and in Node.js
 - [Using a service](docs/guide/using-services.md): properties, functions, generators, objects, events, callbacks, and locks
@@ -32,14 +39,14 @@ The [documentation](https://johnwason.github.io/robotraconteur_typescript/) has 
 - [Service definitions](docs/guide/service-definitions.md): parsing and checking `.robdef` files
 - [Limits](docs/guide/limits.md): browser origins, flow control, bundle size, and what is not supported
 
-For `rr+tcp`, TLS, discovery, and writing services in Node.js, see [robotraconteur-node](https://github.com/johnwason/robotraconteur_typescript_node).
+For `rr+tcp`, TLS, discovery, and writing services in Node.js, see [robotraconteur-node](https://github.com/robotraconteur/robotraconteur_typescript_node).
 
 ## Example: a web page
 
-Copy [examples/robotraconteur.min.js](examples/robotraconteur.min.js) next to your HTML file and load it with a script tag. Everything is then available under the name `RobotRaconteur`.
+Load `robotraconteur.min.js` with a script tag, from a CDN or from a copy of [examples/robotraconteur.min.js](examples/robotraconteur.min.js) next to your HTML file. Everything is then available under the name `RobotRaconteur`.
 
 ```html
-<script src="robotraconteur.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/robotraconteur@0.1.0/dist/robotraconteur.min.js"></script>
 <script>
     async function main() {
         const node = new RobotRaconteur.RobotRaconteurNode();
@@ -93,6 +100,14 @@ Tests for members this client does not implement (memories) and for Message Vers
 
 * `test/fixtures/robdef_oracle.json` is how the Core parser reads each test service definition.
 * `test/fixtures/recorded_vectors.json` is the sequence of operations made by the Core Python test client.
+
+## Releasing
+
+1. Update the version in `package.json`, and in the CDN links of this README and `docs/guide/getting-started.md`, and add the changes to [CHANGELOG.md](CHANGELOG.md).
+2. Publish a GitHub release in the robotraconteur organization, with a new tag named after the version, such as `v0.1.0`. The Publish workflow runs the tests, checks that the tag matches the version, and stages the release on npm with provenance. It needs a stage-only npm token in the `NPM_TOKEN` secret of the repository.
+3. Approve the staged version with 2FA, on npmjs.com under Staged Packages or with `npm stage approve <stage-id>`. It is published when approved.
+
+Publish this package before a robotraconteur-node release that depends on its changes.
 
 ## License
 

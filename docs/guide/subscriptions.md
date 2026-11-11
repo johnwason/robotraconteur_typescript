@@ -43,4 +43,4 @@ Wire values are the latest available, so nothing is lost by reconnecting. Pipe p
 
 ## Finding services by type
 
-A subscription by URL needs no discovery. To subscribe to every service of a type on the network, use discovery from the [robotraconteur-node](https://github.com/johnwason/robotraconteur_typescript_node) package. Browsers cannot send the UDP packets discovery uses.
+A subscription by URL needs no discovery. To subscribe to every service of a type on the network, use discovery from the [robotraconteur-node](https://github.com/robotraconteur/robotraconteur_typescript_node) package. Browsers cannot send the UDP packets discovery uses.

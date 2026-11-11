@@ -6,7 +6,7 @@ title: Limits
 
 ## What is not supported
 
-* Client only. Services are written with [robotraconteur-node](https://github.com/johnwason/robotraconteur_typescript_node).
+* Client only. Services are written with [robotraconteur-node](https://github.com/robotraconteur/robotraconteur_typescript_node).
 * Message Format Version 2. Message Version 4 is not offered during connection.
 * Only `rr+ws` and `rr+wss` connections through the `WebSocket` class. `tcp` and `rr+tcp` URLs are converted to WebSocket connections, matching RobotRaconteurWeb. robotraconteur-node adds `rr+tcp` and `rrs+tcp`.
 * Memories and `rrs+` end-to-end encryption are not implemented.

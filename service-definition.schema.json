@@ -1,6 +1,6 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://github.com/johnwason/robotraconteur_typescript/service-definition.schema.json",
+    "$id": "https://github.com/robotraconteur/robotraconteur_typescript/service-definition.schema.json",
     "title": "Robot Raconteur parsed service definition",
     "type": "object",
     "required": ["name", "imports", "using", "options", "constants", "enums", "exceptions", "structures", "pods", "namedArrays", "objects"],
