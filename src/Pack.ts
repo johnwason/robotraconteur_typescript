@@ -51,8 +51,8 @@ export interface DecodeOptions
     namedArrays?: "object" | "view";
     /**
      * Named array types, by qualified name, whose arrays are always decoded as {@link NamedArrayView},
-     * such as `com.robotraconteur.pointcloud.PointCloudPointf`. The set is read when the options object is
-     * first used, so assign a new options object to change it.
+     * such as `com.robotraconteur.pointcloud.PointCloudPointf`. The list is read when it is first used,
+     * so assign a new list to change it.
      */
     viewTypes?: Iterable<string>;
 }
@@ -60,6 +60,7 @@ export interface DecodeOptions
 /** A field of a named array, as stored in a {@link NamedArrayView} */
 export interface NamedArrayViewField
 {
+    /** Field name */
     name: string;
     /** Offset of the field from the start of an element, in entries of the typed array */
     offset: number;
@@ -67,6 +68,7 @@ export interface NamedArrayViewField
     count: number;
     /** Number type such as `double`, or the qualified name of a nested named array */
     type: string;
+    /** True for an array field, such as `double[3]` */
     isArray: boolean;
 }
 
@@ -89,7 +91,10 @@ export class NamedArrayView<A extends NumericArray = NumericArray>
     /** Number type of the typed array, such as `double` */
     readonly elementType: string;
 
-    /** @internal Use newNamedArrayView, or receive one with DecodeOptions */
+    /**
+     * @internal Use newNamedArrayView, or receive one with DecodeOptions
+     * @param array The values of every element, in order. It belongs to the view
+     */
     constructor(private readonly layout: NamedArrayLayout, readonly array: A)
     {
         this.typeName = layout.typeName;
@@ -192,8 +197,7 @@ export class TypeContext
 {
     private resolved = new Map<string, ResolvedType>();
     private layouts = new Map<string, NamedArrayLayout>();
-    private decode_source: DecodeOptions | undefined | null = null;
-    private view_all = false;
+    private decode_source: Iterable<string> | undefined | null = null;
     private view_types = new Set<string>();
 
     /**
@@ -206,13 +210,14 @@ export class TypeContext
     namedArrayAsView(r: ResolvedType): boolean
     {
         const o = this.decodeOptions();
-        if (o !== this.decode_source)
+        if (o?.namedArrays === "view") return true;
+        // The set is made again only when viewTypes is replaced
+        if (o?.viewTypes !== this.decode_source)
         {
-            this.decode_source = o;
-            this.view_all = o?.namedArrays === "view";
+            this.decode_source = o?.viewTypes;
             this.view_types = new Set(o?.viewTypes ?? []);
         }
-        return this.view_all || this.view_types.has(r.qualifiedName);
+        return this.view_types.has(r.qualifiedName);
     }
 
     resolve(name: string, scope: ServiceDefinition): ResolvedType

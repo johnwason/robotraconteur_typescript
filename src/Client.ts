@@ -871,15 +871,13 @@ export class ClientContext
         this.types = new TypeContext(new Map(node.serviceTypes), () => this.decodeOptions);
     }
 
-    /**
-     * How this connection decodes received values. The node's decodeOptions unless set. Assign a new
-     * object to change it.
-     */
+    /** How this connection decodes received values. The node's decodeOptions unless set */
     get decodeOptions(): DecodeOptions
     {
         return this.decode_options ?? this.node.decodeOptions;
     }
 
+    /** Set how this connection decodes received values, or undefined to use the node's decodeOptions */
     set decodeOptions(options: DecodeOptions | undefined)
     {
         this.decode_options = options;

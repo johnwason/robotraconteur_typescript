@@ -118,6 +118,20 @@ test("viewTypes selects types by qualified name", () =>
     assert.ok(roundTrip("vec[]", [{ x: 1, y: 2 }], { viewTypes: new Set(["test.views.vec"]) }) instanceof NamedArrayView);
 });
 
+test("options changed in place take effect", () =>
+{
+    const o: DecodeOptions = {};
+    assert.ok(Array.isArray(roundTrip("point[]", points, o)));
+    o.namedArrays = "view";
+    assert.ok(roundTrip("point[]", points, o) instanceof NamedArrayView);
+    o.namedArrays = "object";
+    assert.ok(Array.isArray(roundTrip("point[]", points, o)));
+    o.viewTypes = ["test.views.point"];
+    assert.ok(roundTrip("point[]", points, o) instanceof NamedArrayView);
+    o.viewTypes = [];
+    assert.ok(Array.isArray(roundTrip("point[]", points, o)));
+});
+
 test("single named arrays stay objects", () =>
 {
     assert.deepEqual(roundTrip("vec", { x: 1, y: 2 }, { namedArrays: "view" }), { x: 1, y: 2 });

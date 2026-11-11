@@ -47,7 +47,7 @@ export class RobotRaconteurNode
     endpointInactivityTimeout = 600000;
     /**
      * How connections decode received values, unless set on a connection with
-     * ClientContext.decodeOptions. Assign a new object to change it.
+     * ClientContext.decodeOptions
      */
     decodeOptions: DecodeOptions = {};
 

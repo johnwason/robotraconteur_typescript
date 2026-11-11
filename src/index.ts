@@ -31,6 +31,7 @@ export { RobotRaconteurNode } from "./Node.js";
 export { NodeID } from "./NodeID.js";
 export { NamedArrayView, VarValue } from "./Pack.js";
 export type { DecodeOptions, MultiDimArray, NamedArrayViewField } from "./Pack.js";
+export type { NumericArray } from "./DataTypes.js";
 export { parseServiceDefinition, parseTypeDefinition, ServiceDefinitionParseError } from "./ServiceDefinition.js";
 export { getConstants, newNamedArrayView, newStructure } from "./ServiceTypes.js";
 export type {
