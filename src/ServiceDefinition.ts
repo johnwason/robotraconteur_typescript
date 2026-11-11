@@ -16,8 +16,10 @@
 // data described by service-definition.schema.json. Semantic checks are in
 // ServiceDefinitionValidators.ts so that they are not included in bundles that do not need them.
 
+/** The container of a type: a list, a map with int32 or string keys, or a generator */
 export type ContainerType = "list" | "map_int32" | "map_string" | "generator";
 
+/** A type as written in a service definition, such as `double[3]` or `string{int32}` */
 export interface TypeDefinition
 {
     /** Primitive type name, "varvalue", "varobject", or a possibly qualified named type */
@@ -32,90 +34,143 @@ export interface TypeDefinition
     container?: ContainerType;
 }
 
+/** A parameter of a function, event, or callback */
 export interface ParameterDefinition
 {
+    /** The parameter name */
     name: string;
+    /** The parameter type */
     type: TypeDefinition;
 }
 
+/** The kind of a member of a structure or object */
 export type MemberKind = "field" | "property" | "function" | "event" | "objref" | "pipe" | "callback" | "wire" | "memory";
 
+/** A member of a structure, pod, named array, or object */
 export interface MemberDefinition
 {
+    /** What kind of member it is */
     kind: MemberKind;
+    /** The member name */
     name: string;
     /** Value type, or return type for function and callback members. Omitted for events */
     type?: TypeDefinition;
     /** Present for function, event, and callback members */
     parameters?: ParameterDefinition[];
+    /** Modifiers in brackets after the member, such as readonly or nolock, as written */
     modifiers?: string[];
+    /** The documentation in `##` comments before the member */
     docString?: string;
 }
 
+/** A constant in a service definition or object */
 export interface ConstantDefinition
 {
+    /** The constant name */
     name: string;
+    /** The constant type */
     type: TypeDefinition;
     /** Value exactly as written in the service definition */
     value: string;
+    /** The documentation in `##` comments before the constant */
     docString?: string;
 }
 
+/** A structure, pod, named array, or object */
 export interface EntryDefinition
 {
+    /** The unqualified name */
     name: string;
+    /** Objects this object implements, as written */
     implements: string[];
+    /** Option statements, as written */
     options: string[];
+    /** Constants declared inside the entry */
     constants: ConstantDefinition[];
+    /** The members, in order */
     members: MemberDefinition[];
+    /** The documentation in `##` comments before the entry */
     docString?: string;
 }
 
+/** A value of an enum */
 export interface EnumValue
 {
+    /** The value name */
     name: string;
+    /** The integer value */
     value: number;
+    /** The documentation in `##` comments before the value */
     docString?: string;
 }
 
+/** An enum */
 export interface EnumDefinition
 {
+    /** The unqualified name */
     name: string;
+    /** The values, in order */
     values: EnumValue[];
+    /** The documentation in `##` comments before the enum */
     docString?: string;
 }
 
+/** A using statement, which lets a type from an imported definition be named without its service */
 export interface UsingDefinition
 {
+    /** The type's qualified name */
     qualifiedName: string;
+    /** The name it is used by */
     unqualifiedName: string;
 }
 
+/** An exception, which services may throw */
 export interface ExceptionDefinition
 {
+    /** The unqualified name */
     name: string;
+    /** The documentation in `##` comments before the exception */
     docString?: string;
 }
 
+/**
+ * A parsed service definition. It is plain data, which can be stored as JSON, and is described by
+ * service-definition.schema.json in this package.
+ */
 export interface ServiceDefinition
 {
+    /** The service name, such as `experimental.reynard` */
     name: string;
+    /** The standard version from stdver or option version, if given */
     stdVer?: string;
+    /** The documentation in `##` comments before the service statement */
     docString?: string;
+    /** Service definitions imported, by name */
     imports: string[];
+    /** Using statements */
     using: UsingDefinition[];
+    /** Option statements, as written */
     options: string[];
+    /** Constants of the service */
     constants: ConstantDefinition[];
+    /** Enums of the service */
     enums: EnumDefinition[];
+    /** Exceptions of the service */
     exceptions: ExceptionDefinition[];
+    /** Structures */
     structures: EntryDefinition[];
+    /** Pods */
     pods: EntryDefinition[];
+    /** Named arrays */
     namedArrays: EntryDefinition[];
+    /** Objects */
     objects: EntryDefinition[];
 }
 
+/** A service definition could not be parsed. The message includes the line number */
 export class ServiceDefinitionParseError extends Error
 {
+    /** @param lineNumber The line of the definition with the error, starting from 1, or 0 if it is not on one line */
     constructor(message: string, public lineNumber: number)
     {
         super(`${message} (line ${lineNumber})`);

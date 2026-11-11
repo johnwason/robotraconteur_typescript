@@ -15,8 +15,10 @@
 /** 128-bit Robot Raconteur node identifier */
 export class NodeID
 {
+    /** The 16 bytes of the ID */
     readonly bytes: Uint8Array;
 
+    /** @param id The 16 bytes, or a string as `{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}`, with or without the braces and dashes */
     constructor(id: Uint8Array | string)
     {
         if (typeof id === "string")
@@ -32,8 +34,10 @@ export class NodeID
         this.bytes = id;
     }
 
+    /** The all zero ID, which means any node in URLs and requests */
     static readonly Any = new NodeID(new Uint8Array(16));
 
+    /** A new random ID, as a version 4 UUID */
     static newUniqueID(): NodeID
     {
         const b = new Uint8Array(16);
@@ -43,16 +47,19 @@ export class NodeID
         return new NodeID(b);
     }
 
+    /** True for NodeID.Any */
     get isAnyNode(): boolean
     {
         return this.bytes.every((x) => x === 0);
     }
 
+    /** True if the IDs are the same */
     equals(other: NodeID): boolean
     {
         return this.bytes.every((x, i) => x === other.bytes[i]);
     }
 
+    /** The ID as `{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}`, as Core writes it */
     toString(): string
     {
         const h = Array.from(this.bytes, (x) => x.toString(16).padStart(2, "0")).join("");

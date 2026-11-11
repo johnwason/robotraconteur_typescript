@@ -24,17 +24,27 @@ import { MessageErrorType } from "./DataTypes.js";
 /** Milliseconds between starting attempts on candidate URLs, as in Core */
 const CANDIDATE_URL_DELAY_MS = 15;
 
+/**
+ * A Robot Raconteur node: the transports, service definitions, and connections of one program.
+ * Register a transport, then connect to services with connectService.
+ */
 export class RobotRaconteurNode
 {
     /** Version reported to services. Matches the RobotRaconteurWeb protocol level */
     static readonly Version = "0.20.0";
 
+    /** The ID of this node. A random one unless set, which must be done before connecting */
     nodeID = NodeID.newUniqueID();
+    /** The name of this node, which services see. Empty by default */
     nodeName = "";
+    /** Milliseconds to wait for the response to a request */
     requestTimeout = 15000;
+    /** A transport connection is closed after this many milliseconds without messages */
     transportInactivityTimeout = 600000;
+    /** A client is closed after this many milliseconds without messages from its service */
     endpointInactivityTimeout = 600000;
 
+    /** The service definitions registered with registerServiceType, by name */
     readonly serviceTypes = new Map<string, ServiceDefinition>();
 
     private transports: Transport[] = [];
@@ -42,6 +52,7 @@ export class RobotRaconteurNode
     private clients = new Set<ClientContext>();
     private shutdown_hooks = new Set<() => void>();
 
+    /** Add a transport, such as BrowserWebSocketTransport, for connections to use */
     registerTransport(transport: Transport): void
     {
         this.transports.push(transport);
@@ -144,6 +155,7 @@ export class RobotRaconteurNode
         });
     }
 
+    /** Disconnect from a service, given its root object or any object of the connection */
     async disconnectService(stub: ServiceStub): Promise<void>
     {
         await stub.context.close();
@@ -164,6 +176,7 @@ export class RobotRaconteurNode
         this.shutdown_hooks.add(hook);
     }
 
+    /** Stop calling a function added with addShutdownHook */
     removeShutdownHook(hook: () => void): void
     {
         this.shutdown_hooks.delete(hook);
@@ -187,6 +200,7 @@ export class RobotRaconteurNode
         this.endpoints.set(c.localEndpoint, c);
     }
 
+    /** Stop routing messages to an endpoint */
     deleteEndpoint(c: Endpoint): void
     {
         this.endpoints.delete(c.localEndpoint);
@@ -194,8 +208,8 @@ export class RobotRaconteurNode
     }
 
     /**
-     * Route a message to its endpoint. If it cannot be delivered, requests in it are answered with
-     * an error through the connection it arrived on, as Core does.
+     * @internal Route a message to its endpoint. If it cannot be delivered, requests in it are
+     * answered with an error through the connection it arrived on, as Core does.
      */
     messageReceived(m: Message, connection?: ITransportConnection): void
     {

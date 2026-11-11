@@ -40,12 +40,14 @@
         "test:integration": "npm run build:test && node --test --test-concurrency=1 \"dist-test/test/integration/*.test.js\"",
         "test": "npm run build:test && node --test --test-concurrency=1 \"dist-test/test/unit/*.test.js\" \"dist-test/test/integration/*.test.js\"",
         "size": "node scripts/size-report.mjs",
-        "fixtures": "python3 scripts/generate_robdef_oracle.py && python3 scripts/record_vectors.py && python3 scripts/port_core_client_tests.py"
+        "fixtures": "python3 scripts/generate_robdef_oracle.py && python3 scripts/record_vectors.py && python3 scripts/port_core_client_tests.py",
+        "docs": "tsc -p tsconfig.json && typedoc"
     },
     "devDependencies": {
         "@types/node": "22.10.2",
         "esbuild": "0.24.2",
         "playwright": "1.49.1",
+        "typedoc": "0.28.20",
         "typescript": "5.7.2"
     }
 }

@@ -19,8 +19,18 @@ import { MemberContext, MemberDirection, memberError, reportHandlerError, Waiter
 
 const MAX_PACKET_NUMBER = 0xffffffff;
 
+/** A packet from tryReceivePacketWait and similar functions, which return null instead of throwing */
+export interface PipePacketValue
+{
+    /** The packet, unpacked as the pipe's type */
+    value: unknown;
+}
+
+/** Called when packets arrive. The handler receives them from the endpoint itself */
 export type PipePacketHandler = (handle: PipeHandle) => unknown;
+/** Called with the number of a packet the peer has acknowledged */
 export type PipeAckHandler = (handle: PipeHandle, packetNumber: number) => unknown;
+/** Called when a pipe endpoint ends other than by closing it */
 export type PipeClosedHandler = (handle: PipeHandle) => unknown;
 
 interface ReceivedPacket
@@ -51,13 +61,19 @@ function callHandler(what: string, f: () => unknown): void
 /** A connected pipe endpoint. Use the pipe functions of ServiceStub with it */
 export class PipeHandle
 {
+    /** True once the endpoint has closed */
     closed = false;
+    /** Ask the peer to acknowledge each packet this endpoint sends */
     requestPacketAck = false;
+    /** Drop packets from the service */
     ignoreInValue = false;
     /** The endpoint closes rather than losing packets if more than this many are waiting. Zero for no limit */
     maxReceiveQueue = 65536;
+    /** Called if the endpoint ends other than by closing it */
     closeCallback: PipeClosedHandler | null = null;
+    /** Functions called when packets arrive */
     readonly packetListeners = new Set<PipePacketHandler>();
+    /** Functions called with acknowledged packet numbers */
     readonly ackListeners = new Set<PipeAckHandler>();
 
     private send_number = 0;
@@ -67,8 +83,17 @@ export class PipeHandle
     private waiters = new Waiters();
     private close_reason = "Receive queue empty";
 
+    /**
+     * @internal Created by ServiceStub.connectPipe
+     *
+     * @param memberName The pipe member
+     * @param index The index of the endpoint
+     * @param direction Whether the pipe is readonly or writeonly from this client
+     * @param unreliable Whether packets may be lost or arrive out of order
+     */
     constructor(private ctx: MemberContext, readonly memberName: string, readonly index: number, private type: TypeDefinition, readonly direction: MemberDirection, public unreliable: boolean, private on_closed: (h: PipeHandle) => void) {}
 
+    /** The number of packets waiting to be received */
     get available(): number
     {
         return this.queue.length;
@@ -131,6 +156,7 @@ export class PipeHandle
         return p.value;
     }
 
+    /** Take the next packet. Throws InvalidOperation if none are waiting */
     receivePacket(): unknown
     {
         this.checkRead();
@@ -138,6 +164,7 @@ export class PipeHandle
         return this.take();
     }
 
+    /** Read the next packet without removing it. Throws InvalidOperation if none are waiting */
     peekPacket(): unknown
     {
         this.checkRead();
@@ -146,7 +173,7 @@ export class PipeHandle
     }
 
     /** Returns null if no packet became available within the timeout */
-    async tryReceivePacketWait(timeout: number, peek: boolean): Promise<{ value: unknown } | null>
+    async tryReceivePacketWait(timeout: number, peek: boolean): Promise<PipePacketValue | null>
     {
         this.checkRead();
         if (this.queue.length === 0 && !this.closed && timeout !== 0) await this.waiters.wait(timeout);
@@ -154,6 +181,7 @@ export class PipeHandle
         return { value: peek ? this.queue[0]!.value : this.take() };
     }
 
+    /** Wait up to timeout milliseconds for a packet, or indefinitely if negative, then take it, or read it if peek is set. Throws if none arrives */
     async receivePacketWait(timeout: number, peek: boolean): Promise<unknown>
     {
         const r = await this.tryReceivePacketWait(timeout, peek);
@@ -173,6 +201,7 @@ export class PipeHandle
         }
     }
 
+    /** @internal Called by the stub when a packet arrives */
     packetReceived(element: MessageElement): void
     {
         if (this.direction === "writeonly") return;
@@ -216,6 +245,7 @@ export class PipeHandle
         for (const h of [...this.packetListeners]) callHandler(`pipe "${this.memberName}"`, () => h(this));
     }
 
+    /** @internal Called by the stub when the peer acknowledges a packet */
     ackReceived(number: number): void
     {
         for (const h of [...this.ackListeners]) callHandler(`pipe "${this.memberName}" acknowledgement`, () => h(this, number));
@@ -236,6 +266,7 @@ export class PipeHandle
         this.fireClosed();
     }
 
+    /** Close the endpoint. The close callback is not called */
     async close(): Promise<void>
     {
         if (this.closed) return;

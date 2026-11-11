@@ -1,0 +1,36 @@
+{
+    "$schema": "https://typedoc.org/schema.json",
+    "entryPoints": [
+        "src/index.ts",
+        "src/ServiceDefinitionValidators.ts"
+    ],
+    "out": "docs-site",
+    "name": "Robot Raconteur TypeScript",
+    "excludePrivate": true,
+    "excludeInternal": true,
+    "validation": {
+        "notExported": true,
+        "invalidLink": true,
+        "notDocumented": true
+    },
+    "excludeProtected": true,
+    "intentionallyNotExported": [
+        "StreamTransportParent",
+        "Message"
+    ],
+    "readme": "README.md",
+    "projectDocuments": [
+        "docs/guide/getting-started.md",
+        "docs/guide/using-services.md",
+        "docs/guide/wires-and-pipes.md",
+        "docs/guide/subscriptions.md",
+        "docs/guide/value-types.md",
+        "docs/guide/service-definitions.md",
+        "docs/guide/limits.md"
+    ],
+    "navigation": {
+        "includeCategories": false,
+        "includeGroups": true
+    },
+    "treatWarningsAsErrors": true
+}

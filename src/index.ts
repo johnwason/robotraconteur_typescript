@@ -12,11 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+/**
+ * The Robot Raconteur client: nodes, connections, transports, subscriptions, and the service
+ * definition parser.
+ *
+ * @module robotraconteur
+ */
+
 export { BrowserWebSocketTransport } from "./BrowserWebSocketTransport.js";
 export { ClientContext, GeneratorHandle, ServiceStub } from "./Client.js";
 export type { CallbackHandler, EventHandler } from "./Client.js";
 export { PipeHandle } from "./PipeMember.js";
-export type { PipeAckHandler, PipeClosedHandler, PipePacketHandler } from "./PipeMember.js";
+export type { PipeAckHandler, PipeClosedHandler, PipePacketHandler, PipePacketValue } from "./PipeMember.js";
 export { WireHandle } from "./WireMember.js";
 export type { MemberDirection, TimeSpec, WireClosedHandler, WireValue, WireValueChangedHandler } from "./WireMember.js";
 export { RobotRaconteurError } from "./Error.js";
@@ -45,6 +52,7 @@ export type {
     ClientConnectFailedHandler,
     ClientConnectionHandler,
     ConnectedClient,
+    Credentials,
     PipePacketSubscriptionHandler,
     ServiceSubscriptionClient,
     ServiceSubscriptionClientID,

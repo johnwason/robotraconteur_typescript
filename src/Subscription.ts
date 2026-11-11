@@ -17,7 +17,7 @@ import { MessageErrorType } from "./DataTypes.js";
 import { RobotRaconteurError } from "./Error.js";
 import type { RobotRaconteurNode } from "./Node.js";
 import { NodeID } from "./NodeID.js";
-import type { PipeHandle } from "./PipeMember.js";
+import type { PipeHandle, PipePacketValue } from "./PipeMember.js";
 import { parseConnectionUrl } from "./Transport.js";
 import { Waiters } from "./WireMember.js";
 import type { WireHandle, WireValue } from "./WireMember.js";
@@ -25,7 +25,8 @@ import type { WireHandle, WireValue } from "./WireMember.js";
 /** Wait before retrying a wire or pipe connection while the client remains connected */
 const MEMBER_RETRY_MS = 2500;
 
-type Credentials = Map<string, unknown> | Record<string, unknown>;
+/** Credentials to log in with, such as `{ password: new VarValue("...", "string") }` */
+export type Credentials = Map<string, unknown> | Record<string, unknown>;
 
 function connectionError(message: string): RobotRaconteurError
 {
@@ -50,27 +51,39 @@ function callListeners<A extends unknown[]>(listeners: Set<(...args: A) => unkno
 /** Identifies a connected service. The NodeID is Any until the first connection to a URL */
 export interface ServiceSubscriptionClientID
 {
+    /** The node of the service, or NodeID.Any until a connection by URL has been made */
     nodeID: NodeID;
+    /** The name of the service */
     serviceName: string;
 }
 
 /** A service that a subscription should keep connected */
 export interface ServiceSubscriptionClient
 {
+    /** The node of the service, or NodeID.Any to accept any node at the URLs */
     nodeID: NodeID;
+    /** The name of the node, or empty for any */
     nodeName: string;
+    /** The name of the service */
     serviceName: string;
+    /** The URLs to try, in order */
     urls: string[];
+    /** The username to log in with, if the service needs one */
     username?: string;
+    /** The credentials to log in with, such as `{ password: new VarValue("...", "string") }` */
     credentials?: Credentials;
+    /** Connect to the root object as this type, which it implements, rather than its own */
     objectType?: string;
 }
 
+/** A service a subscription has connected, from getConnectedClients */
 export interface ConnectedClient extends ServiceSubscriptionClientID
 {
+    /** The root object of the service */
     client: ServiceStub;
 }
 
+/** Options for subscribeService and new ServiceSubscription */
 export interface ServiceSubscriptionOptions
 {
     /** Milliseconds between connection attempts */
@@ -79,9 +92,13 @@ export interface ServiceSubscriptionOptions
     connectErrorLimit?: number;
 }
 
+/** Called when a subscription connects or loses a service */
 export type ClientConnectionHandler = (subscription: ServiceSubscription, id: ServiceSubscriptionClientID, client: ServiceStub) => unknown;
+/** Called when a subscription fails to connect to a service, with the URLs it tried and the error */
 export type ClientConnectFailedHandler = (subscription: ServiceSubscription, id: ServiceSubscriptionClientID, urls: string[], error: unknown) => unknown;
+/** Called with each new value a wire subscription receives, and its timestamp */
 export type WireValueSubscriptionHandler = (subscription: WireSubscription, value: unknown, timestamp: WireValue["timestamp"]) => unknown;
+/** Called when a pipe subscription receives packets. The handler receives them from the subscription */
 export type PipePacketSubscriptionHandler = (subscription: PipeSubscription) => unknown;
 
 interface ClientState extends ServiceSubscriptionClient
@@ -122,6 +139,7 @@ export class ServiceSubscription
     private service_url: string[] | null = null;
     private readonly shutdown_hook = () => this.close();
 
+    /** @param node The node to connect from. The subscription closes when it shuts down */
     constructor(readonly node: RobotRaconteurNode, options: ServiceSubscriptionOptions = {})
     {
         this.connectRetryDelay = options.connectRetryDelay ?? 15000;
@@ -279,31 +297,37 @@ export class ServiceSubscription
         return c;
     }
 
+    /** Call a function each time a service is connected */
     addClientConnectListener(listener: ClientConnectionHandler): void
     {
         this.connected_listeners.add(listener);
     }
 
+    /** Stop calling a function added with addClientConnectListener */
     removeClientConnectListener(listener: ClientConnectionHandler): void
     {
         this.connected_listeners.delete(listener);
     }
 
+    /** Call a function each time a connected service is lost */
     addClientDisconnectListener(listener: ClientConnectionHandler): void
     {
         this.disconnected_listeners.add(listener);
     }
 
+    /** Stop calling a function added with addClientDisconnectListener */
     removeClientDisconnectListener(listener: ClientConnectionHandler): void
     {
         this.disconnected_listeners.delete(listener);
     }
 
+    /** Call a function each time a connection attempt fails */
     addClientConnectFailedListener(listener: ClientConnectFailedHandler): void
     {
         this.failed_listeners.add(listener);
     }
 
+    /** Stop calling a function added with removeClientConnectFailedListener */
     removeClientConnectFailedListener(listener: ClientConnectFailedHandler): void
     {
         this.failed_listeners.delete(listener);
@@ -321,6 +345,7 @@ export class ServiceSubscription
         this.findClient(client).claimed = true;
     }
 
+    /** Give back a client taken with claimClient, so that the subscription manages it again */
     releaseClient(client: ServiceStub): void
     {
         this.findClient(client).claimed = false;
@@ -482,17 +507,20 @@ abstract class MemberSubscription<C extends MemberConnection>
     protected closed = false;
     protected connections = new Map<ServiceStub, C>();
 
+    /** @param memberName The wire or pipe member */
     constructor(protected parent: ServiceSubscription, readonly memberName: string, protected servicePath: string) {}
 
     protected abstract newConnection(client: ServiceStub): C;
     /** Connect the member and return once it has closed */
     protected abstract runMember(object: ServiceStub, c: C): Promise<void>;
 
+    /** @internal Called by the subscription when a service is connected */
     clientConnected(client: ServiceStub): void
     {
         void this.runConnection(client);
     }
 
+    /** @internal Called by the subscription when a service is lost */
     clientDisconnected(client: ServiceStub): void
     {
         const c = this.connections.get(client);
@@ -591,6 +619,7 @@ export class WireSubscription extends MemberSubscription<WireConnection>
         callListeners(this.listeners, this, value, timestamp);
     }
 
+    /** Whether a value has been received and has not expired */
     get inValueValid(): boolean
     {
         return this.in_value !== null && (this.inValueLifespan < 0 || Date.now() - this.in_value_received <= this.inValueLifespan);
@@ -602,6 +631,7 @@ export class WireSubscription extends MemberSubscription<WireConnection>
         return this.inValueValid ? this.in_value : null;
     }
 
+    /** The latest value and its timestamp. Throws ValueNotSet if there is no valid value */
     getInValue(): WireValue
     {
         const v = this.tryGetInValue();
@@ -629,6 +659,7 @@ export class WireSubscription extends MemberSubscription<WireConnection>
         return this.ignore_in_value;
     }
 
+    /** Stop receiving values. Useful for wires that are only used for sending */
     set ignoreInValue(ignore: boolean)
     {
         this.ignore_in_value = ignore;
@@ -661,11 +692,13 @@ export class WireSubscription extends MemberSubscription<WireConnection>
         }
     }
 
+    /** Call a function with each new value */
     addWireValueChangedListener(listener: WireValueSubscriptionHandler): void
     {
         this.listeners.add(listener);
     }
 
+    /** Stop calling a function added with addWireValueChangedListener */
     removeWireValueChangedListener(listener: WireValueSubscriptionHandler): void
     {
         this.listeners.delete(listener);
@@ -757,11 +790,12 @@ export class PipeSubscription extends MemberSubscription<PipeConnection>
     }
 
     /** The next packet, as { value }, or null if there are none */
-    tryReceivePacket(): { value: unknown } | null
+    tryReceivePacket(): PipePacketValue | null
     {
         return this.packets.length > 0 ? { value: this.packets.shift() } : null;
     }
 
+    /** Take the next packet. Throws InvalidOperation if there are none */
     receivePacket(): unknown
     {
         const p = this.tryReceivePacket();
@@ -770,7 +804,7 @@ export class PipeSubscription extends MemberSubscription<PipeConnection>
     }
 
     /** Wait for a packet, returning { value } or null. A negative timeout waits indefinitely */
-    async tryReceivePacketWait(timeout = -1, peek = false): Promise<{ value: unknown } | null>
+    async tryReceivePacketWait(timeout = -1, peek = false): Promise<PipePacketValue | null>
     {
         const deadline = Date.now() + timeout;
         while (this.packets.length === 0)
@@ -795,11 +829,13 @@ export class PipeSubscription extends MemberSubscription<PipeConnection>
         }
     }
 
+    /** Call a function when packets arrive */
     addPipePacketReceivedListener(listener: PipePacketSubscriptionHandler): void
     {
         this.listeners.add(listener);
     }
 
+    /** Stop calling a function added with addPipePacketReceivedListener */
     removePipePacketReceivedListener(listener: PipePacketSubscriptionHandler): void
     {
         this.listeners.delete(listener);
@@ -817,11 +853,13 @@ export class SubObjectSubscription
 {
     constructor(private parent: ServiceSubscription, private servicePath: string) {}
 
+    /** The object on the subscription's current client. Throws if no client is connected */
     async getDefaultClient(): Promise<ServiceStub>
     {
         return resolvePath(this.parent.getDefaultClient(), this.servicePath);
     }
 
+    /** The object on the subscription's current client, or null if none is connected or the object cannot be found */
     async tryGetDefaultClient(): Promise<ServiceStub | null>
     {
         const c = this.parent.tryGetDefaultClient();
@@ -836,11 +874,13 @@ export class SubObjectSubscription
         }
     }
 
+    /** Wait up to timeout milliseconds for a client, or indefinitely if negative, and return the object. Throws if none connects in time */
     async getDefaultClientWait(timeout = -1): Promise<ServiceStub>
     {
         return resolvePath(await this.parent.getDefaultClientWait(timeout), this.servicePath);
     }
 
+    /** Wait up to timeout milliseconds for a client, or indefinitely if negative, and return the object, or null */
     async tryGetDefaultClientWait(timeout = -1): Promise<ServiceStub | null>
     {
         const c = await this.parent.tryGetDefaultClientWait(timeout);
