@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import { ClientContext, ServiceStub } from "./Client.js";
+import type { ObjectLockFlags } from "./Client.js";
 import { Message } from "./Message.js";
 import { NodeID } from "./NodeID.js";
 import { parseServiceDefinition, ServiceDefinition } from "./ServiceDefinition.js";
@@ -159,6 +160,57 @@ export class RobotRaconteurNode
     async disconnectService(stub: ServiceStub): Promise<void>
     {
         await stub.context.close();
+    }
+
+    /**
+     * Lock an object and the objects under it, as Core's RequestObjectLock. Other users, or with
+     * "client" other clients of the same user, receive RobotRaconteur.ObjectLockedError until the
+     * lock is released. The service must allow object locks, and the user must be logged in with
+     * the objectlock privilege. The lock is released when the client disconnects.
+     *
+     * @param stub The object to lock
+     * @param flags "user" to lock for every client of the user, or "client" for this client only
+     * @returns The service's answer, "OK"
+     */
+    async requestObjectLock(stub: ServiceStub, flags: ObjectLockFlags = "user"): Promise<string>
+    {
+        return await stub.context.requestObjectLock(stub, flags);
+    }
+
+    /**
+     * Release an object lock, as Core's ReleaseObjectLock. The lock must be held by the user, unless
+     * the user has the objectlockoverride privilege.
+     *
+     * @param stub The object locked with requestObjectLock
+     * @returns The service's answer, "OK"
+     */
+    async releaseObjectLock(stub: ServiceStub): Promise<string>
+    {
+        return await stub.context.releaseObjectLock(stub);
+    }
+
+    /**
+     * Wait for the monitor lock of an object, as Core's MonitorEnter. A monitor lock gives one
+     * client at a time the object, for short operations that must not be interleaved with other
+     * clients. It does not lock the objects under it, and needs no privilege. Release it with
+     * monitorExit.
+     *
+     * @param stub The object to lock
+     * @param timeout Milliseconds to wait for the lock, or -1 to wait without limit
+     */
+    async monitorEnter(stub: ServiceStub, timeout = -1): Promise<void>
+    {
+        await stub.context.monitorEnter(stub, timeout);
+    }
+
+    /**
+     * Release a monitor lock, as Core's MonitorExit
+     *
+     * @param stub The object locked with monitorEnter
+     */
+    async monitorExit(stub: ServiceStub): Promise<void>
+    {
+        await stub.context.monitorExit(stub);
     }
 
     /** Close all clients and transports */
