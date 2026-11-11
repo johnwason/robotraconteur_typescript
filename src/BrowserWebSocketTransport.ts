@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import type { RobotRaconteurNode } from "./Node.js";
-import { connectionError, SocketAdapter, SocketEvents, StreamClientConnection, StreamTransportParent } from "./StreamTransport.js";
+import { connectionError, SocketAdapter, SocketEvents, StreamConnection, StreamTransportParent } from "./StreamTransport.js";
 import { Endpoint, ITransportConnection, parseConnectionUrl, Transport } from "./Transport.js";
 
 export { SendQueue } from "./StreamTransport.js";
@@ -175,7 +175,7 @@ export class BrowserWebSocketTransport implements Transport, StreamTransportPare
     /** When using WebSocket, resume sending when no more than this many bytes are buffered */
     sendLowWaterMark = 64 * 1024;
 
-    private connections = new Set<StreamClientConnection>();
+    private connections = new Set<StreamConnection>();
 
     constructor(public node: RobotRaconteurNode) {}
 
@@ -190,7 +190,7 @@ export class BrowserWebSocketTransport implements Transport, StreamTransportPare
         if (u.host === "") throw connectionError("Invalid connection URL for WebSocket");
         const ws_url = url.replace(u.scheme + "://", (u.scheme.endsWith("wss") ? "wss" : "ws") + "://");
 
-        const c = new StreamClientConnection(this, u.nodeid, u.nodename, endpoint);
+        const c = new StreamConnection(this, u.nodeid, u.nodename, endpoint);
         const stream_ctor = this.useWebSocketStream ? webSocketStreamConstructor() : undefined;
         await c.connect((events) => stream_ctor
             ? openWebSocketStream(stream_ctor, ws_url, this.defaultConnectTimeout, events)
@@ -204,7 +204,7 @@ export class BrowserWebSocketTransport implements Transport, StreamTransportPare
         for (const c of [...this.connections]) c.close();
     }
 
-    removeConnection(c: StreamClientConnection): void
+    removeConnection(c: StreamConnection): void
     {
         this.connections.delete(c);
     }

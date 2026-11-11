@@ -17,14 +17,14 @@ import { RobotRaconteurError } from "./Error.js";
 import { findElement, getElement, Message, MessageElement, MessageEntry } from "./Message.js";
 import { NodeID } from "./NodeID.js";
 import { RobotRaconteurNode } from "./Node.js";
-import { packElement, TypeContext, unpackElement, VarValue } from "./Pack.js";
+import { entryToError, errorToEntry } from "./MessageError.js";
+import { packElement, TypeContext, unpackElement } from "./Pack.js";
 import { EntryDefinition, MemberDefinition, MemberKind, parseServiceDefinition, ServiceDefinition, TypeDefinition } from "./ServiceDefinition.js";
 import { ITransportConnection, parseConnectionUrl, Transport } from "./Transport.js";
 import { PipeAckHandler, PipeClosedHandler, PipeHandle, PipePacketHandler } from "./PipeMember.js";
 import { MemberContext, MemberDirection, memberDirection, packWirePacket, timeNow, unpackWirePacket, WireClosedHandler, WireHandle, WireValue, WireValueChangedHandler } from "./WireMember.js";
 
 const VARVALUE_MAP: TypeDefinition = { type: "varvalue", container: "map_string" };
-const VARVALUE: TypeDefinition = { type: "varvalue" };
 
 interface PendingRequest
 {
@@ -1038,26 +1038,13 @@ export class ClientContext
 
     private entryToError(e: MessageEntry): RobotRaconteurError
     {
-        const err = new RobotRaconteurError(e.error, findElement(e.elements, "errorname")?.castString() ?? "RobotRaconteur.RemoteError", findElement(e.elements, "errorstring")?.castString() ?? "");
-        const sub = findElement(e.elements, "errorsubname");
-        if (sub) err.errorSubName = sub.castString();
-        const param = findElement(e.elements, "errorparam");
-        if (param)
-        {
-            err.errorParam = unpackElement(param, VARVALUE, { name: "" } as ServiceDefinition, this.types) as VarValue | null;
-        }
-        return err;
+        return entryToError(e, this.types);
     }
 
     /** Fill in a response entry for a failure in application code */
     errorToEntry(err: unknown, entry: MessageEntry): void
     {
-        const e = err as Partial<RobotRaconteurError> & { name?: string; message?: string };
-        const is_rr = err instanceof RobotRaconteurError;
-        entry.error = is_rr ? (e.errorCode as MessageErrorType) : MessageErrorType.RemoteError;
-        entry.addElement(MessageElement.string("errorname", is_rr ? e.errorName! : (e.name ?? "Error")));
-        entry.addElement(MessageElement.string("errorstring", e.message ?? String(err)));
-        if (is_rr && e.errorSubName) entry.addElement(MessageElement.string("errorsubname", e.errorSubName));
+        errorToEntry(err, entry, this.types);
     }
 
     sendEntry(e: MessageEntry): void

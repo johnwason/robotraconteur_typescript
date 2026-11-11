@@ -123,7 +123,8 @@ export class ServiceDefinitionParseError extends Error
     }
 }
 
-interface Line
+/** A line of a service definition, after comments and line continuations */
+export interface Line
 {
     text: string;
     number: number;
@@ -154,7 +155,8 @@ const CONTAINERS: Record<string, ContainerType> = {
     generator: "generator"
 };
 
-function readLines(text: string): Line[]
+/** The lines of a service definition, joining continued lines and keeping documentation comments */
+export function readLines(text: string): Line[]
 {
     const src = text.split("\n");
     const out: Line[] = [];

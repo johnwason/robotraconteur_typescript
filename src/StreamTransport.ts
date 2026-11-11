@@ -45,28 +45,6 @@ export interface SocketEvents
 
 export type SocketOpener = (events: SocketEvents) => Promise<SocketAdapter>;
 
-/** The node that answered a STARTTLS request, which its certificate must identify */
-export interface TlsPeer
-{
-    nodeID: NodeID;
-    nodeName: string;
-    /** True if the server agreed to check a client certificate */
-    mutualAuth: boolean;
-}
-
-/**
- * Switch the connection to TLS after STARTTLS, and verify the server. Returns the socket to use
- * from then on, which must deliver its data to the same events.
- */
-export type TlsStarter = (events: SocketEvents, peer: TlsPeer) => Promise<SocketAdapter>;
-
-export interface StreamTlsOptions
-{
-    start: TlsStarter;
-    /** Ask the server to check a client certificate */
-    mutualAuth: boolean;
-}
-
 /** The settings and owner of the connections of a stream transport */
 export interface StreamTransportParent
 {
@@ -76,7 +54,7 @@ export interface StreamTransportParent
     /** Connection is closed if the remote node has not been heard from for this long in milliseconds */
     defaultReceiveTimeout: number;
     maxMessageSize: number;
-    removeConnection(c: StreamClientConnection): void;
+    removeConnection(c: StreamConnection): void;
 }
 
 interface QueuedMessage
@@ -174,15 +152,20 @@ interface StreamOpWait
     reject: (e: Error) => void;
 }
 
-/** The Basic Stream Protocol for a client: framing, send queue, heartbeat, and connection handshake */
-export class StreamClientConnection implements ITransportConnection
+/**
+ * The Basic Stream Protocol for a client: framing, send queue, heartbeat, and the connection
+ * handshake. robotraconteur-node extends it for TLS and for connections accepted by a server.
+ */
+export class StreamConnection implements ITransportConnection
 {
     remoteNodeID = NodeID.Any;
     useCombinedConnection = false;
 
-    private socket!: SocketAdapter;
+    protected socket!: SocketAdapter;
     private send_queue!: SendQueue;
-    private connected = false;
+    protected connected = false;
+    /** Notified when the connection closes */
+    protected endpoints = new Set<Endpoint>();
 
     private recv_buf = new Uint8Array(65536);
     private recv_len = 0;
@@ -193,43 +176,62 @@ export class StreamClientConnection implements ITransportConnection
     private tlastrec = Date.now();
     private tlastrec_mes = Date.now();
 
-    constructor(private parent: StreamTransportParent, private target_nodeid: NodeID, private target_nodename: string, private endpoint: Endpoint) {}
-
-    /** True once TLS is in use */
-    secure = false;
-
-    async connect(open: SocketOpener, tls?: StreamTlsOptions): Promise<void>
+    /** The node to connect to, for a client. A client also gives its endpoint */
+    constructor(protected parent: StreamTransportParent, protected target_nodeid = NodeID.Any, protected target_nodename = "", endpoint?: Endpoint)
     {
-        const events: SocketEvents = {
+        if (endpoint) this.endpoints.add(endpoint);
+    }
+
+    protected events(): SocketEvents
+    {
+        return {
             onData: (frame) => this.dataReceived(frame),
             onClose: () => this.close()
         };
-        this.socket = await open(events);
+    }
 
+    protected start(socket: SocketAdapter): void
+    {
+        this.socket = socket;
         this.send_queue = new SendQueue((frame) => this.socket.write(frame), () =>
         {
             this.tlastsend = Date.now();
         }, () => this.close());
         this.connected = true;
+    }
+
+    protected startHeartbeat(): void
+    {
+        this.tlastsend = this.tlastrec = this.tlastrec_mes = Date.now();
+        this.heartbeat = setInterval(() => this.doHeartbeat(), 500);
+        (this.heartbeat as unknown as { unref?: () => void }).unref?.();
+    }
+
+    async connect(open: SocketOpener): Promise<void>
+    {
+        const events = this.events();
+        this.start(await open(events));
 
         try
         {
-            if (tls) await this.startTls(tls, events);
-            await this.createConnection();
+            await this.handshake(events);
         }
         catch (e)
         {
             this.close();
             throw e;
         }
+        this.startHeartbeat();
+    }
 
-        this.tlastsend = this.tlastrec = this.tlastrec_mes = Date.now();
-        this.heartbeat = setInterval(() => this.doHeartbeat(), 500);
-        (this.heartbeat as unknown as { unref?: () => void }).unref?.();
+    /** Create the connection once the socket is open. Overridden to start TLS first */
+    protected handshake(_events: SocketEvents): Promise<void>
+    {
+        return this.createConnection();
     }
 
     /** Send a stream operation and wait for its reply, failing if the reply reports an error */
-    private async streamOp(m: Message, timeout_message: string, failure_message: string): Promise<Message>
+    protected async streamOp(m: Message, timeout_message: string, failure_message: string): Promise<Message>
     {
         const ret = await new Promise<Message>((resolve, reject) =>
         {
@@ -256,33 +258,6 @@ export class StreamClientConnection implements ITransportConnection
             throw new RobotRaconteurError(entry.error, findElement(entry.elements, "errorname")?.castString() ?? "RobotRaconteur.ConnectionError", s?.castString() ?? failure_message);
         }
         return ret;
-    }
-
-    /** Ask the server to switch to TLS, as Core does before creating the connection */
-    private async startTls(tls: StreamTlsOptions, events: SocketEvents): Promise<void>
-    {
-        const m = new Message();
-        m.header.senderNodeID = this.parent.node.nodeID;
-        m.header.senderNodeName = this.parent.node.nodeName;
-        m.header.receiverNodeID = this.target_nodeid;
-        m.header.receiverNodeName = this.target_nodename;
-        const mm = new MessageEntry(MessageEntryType.StreamOp, "STARTTLS");
-        if (tls.mutualAuth) mm.addElement(MessageElement.string("mutualauth", "true"));
-        m.entries.push(mm);
-
-        const ret = await this.streamOp(m, "Timed out starting TLS", "Could not start TLS");
-        const sender_id = ret.header.senderNodeID;
-        const sender_name = ret.header.senderNodeName;
-        const any_target = this.target_nodeid.isAnyNode;
-        // The same checks as Core, so that the certificate is checked against the node that was requested
-        const matches = (any_target && this.target_nodename === "")
-            || (!any_target && this.target_nodeid.equals(sender_id))
-            || (any_target && sender_name === this.target_nodename);
-        if (!matches) throw connectionError("Could not create TLS connection");
-
-        const mutual = findElement(ret.entries[0]!.elements, "mutualauth")?.castString() === "true";
-        this.socket = await tls.start(events, { nodeID: sender_id, nodeName: sender_name, mutualAuth: tls.mutualAuth && mutual });
-        this.secure = true;
     }
 
     private async createConnection(): Promise<void>
@@ -381,6 +356,9 @@ export class StreamClientConnection implements ITransportConnection
         {
             switch (entry.entryType)
             {
+            case MessageEntryType.StreamOp:
+                this.processStreamOp(m);
+                return;
             case MessageEntryType.StreamOpRet:
                 {
                     const w = this.streamop_wait;
@@ -403,8 +381,23 @@ export class StreamClientConnection implements ITransportConnection
             }
         }
 
+        if (this.rejectMessage(m)) return;
         this.tlastrec_mes = this.tlastrec;
-        this.parent.node.messageReceived(m);
+        this.routeMessage(m);
+    }
+
+    /** Stream operations are only answered by a server */
+    protected processStreamOp(_m: Message): void {}
+
+    /** True to drop a message instead of routing it. A server drops messages from other nodes */
+    protected rejectMessage(_m: Message): boolean
+    {
+        return false;
+    }
+
+    protected routeMessage(m: Message): void
+    {
+        this.parent.node.messageReceived(m, this);
     }
 
     private sendEmptyResponse(m: Message, entry: MessageEntry): void
@@ -485,6 +478,17 @@ export class StreamClientConnection implements ITransportConnection
         {
             // Already closing
         }
-        this.endpoint.transportConnectionClosed();
+        for (const e of [...this.endpoints])
+        {
+            try
+            {
+                e.transportConnectionClosed();
+            }
+            catch
+            {
+                // Each endpoint is notified regardless
+            }
+        }
+        this.endpoints.clear();
     }
 }

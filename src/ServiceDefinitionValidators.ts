@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { EntryDefinition, MemberDefinition, ServiceDefinition, TypeDefinition } from "./ServiceDefinition.js";
+import { EntryDefinition, MemberDefinition, readLines, ServiceDefinition, TypeDefinition } from "./ServiceDefinition.js";
 
 // Semantic checks for parsed service definitions. Imported separately through
 // "robotraconteur/validators" so applications that trust their definitions do not bundle this.
@@ -409,4 +409,41 @@ export function verifyServiceDefinitions(defs: Iterable<ServiceDefinition>): voi
     const all = [...defs];
     verifyUnique(all.map((x) => x.name), "service definition set");
     all.forEach((d) => verifyServiceDefinition(d, all));
+}
+
+/** For each top level entry, the order it sets, the order it must come before, and the error otherwise */
+const ENTRY_ORDER = new Map<string, [number, number, string]>([
+    ["stdver", [2, 2, "stdver must be first after service name"]],
+    ["import", [4, 5, "import must be before all but options"]],
+    ["using", [5, 6, "using must be after imports and before all others except options"]],
+    ["exception", [6, 9, "exception must be before struct and object"]],
+    ["constant", [7, 9, "constant must be before struct and object"]],
+    ["enum", [8, 9, "enum must be before struct and object"]]
+]);
+
+/**
+ * Verify that the entries of a service definition are in the order Core requires: stdver, then
+ * imports, then using, then exceptions, constants, and enums, then structures and objects. Options
+ * may be anywhere. Core rejects definitions in another order, so services check the definitions
+ * they send to clients. The parser itself accepts any order.
+ */
+export function verifyServiceDefinitionOrder(text: string): void
+{
+    let order = 0;
+    let in_block = false;
+    for (const line of readLines(text))
+    {
+        const keyword = /^[ \t]*(\w*)/.exec(line.text)![1]!;
+        if (in_block)
+        {
+            in_block = keyword !== "end";
+            continue;
+        }
+        if (keyword === "service" || keyword === "option") continue;
+        const o = ENTRY_ORDER.get(keyword);
+        if (o && order >= o[1]) fail(`${o[2]} (line ${line.number})`);
+        order = o ? o[0] : 9;
+        // enum, struct, pod, namedarray, and object are blocks closed by end
+        in_block = !o || keyword === "enum";
+    }
 }

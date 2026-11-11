@@ -16,5 +16,6 @@
 
 export * from "./DataTypes.js";
 export * from "./Message.js";
+export * from "./MessageError.js";
 export * from "./Pack.js";
 export * from "./StreamTransport.js";
