@@ -40,6 +40,118 @@ export interface MultiDimArray
     array: unknown;
 }
 
+/** Options for how received values are decoded */
+export interface DecodeOptions
+{
+    /**
+     * How arrays of named arrays (`T[]`, `T[N]`, `T[*]`) are decoded. `"object"`, the default, gives an
+     * Array with one object per element. `"view"` gives a {@link NamedArrayView} over the typed array that
+     * was received, with no work per element. A single named array is always an object.
+     */
+    namedArrays?: "object" | "view";
+    /**
+     * Named array types, by qualified name, whose arrays are always decoded as {@link NamedArrayView},
+     * such as `com.robotraconteur.pointcloud.PointCloudPointf`. The list is read when it is first used,
+     * so assign a new list to change it.
+     */
+    viewTypes?: Iterable<string>;
+}
+
+/** A field of a named array, as stored in a {@link NamedArrayView} */
+export interface NamedArrayViewField
+{
+    /** Field name */
+    name: string;
+    /** Offset of the field from the start of an element, in entries of the typed array */
+    offset: number;
+    /** Number of values for an array field, or 1 */
+    count: number;
+    /** Number type such as `double`, or the qualified name of a nested named array */
+    type: string;
+    /** True for an array field, such as `double[3]` */
+    isArray: boolean;
+}
+
+/**
+ * An array of named arrays stored in one typed array, exactly as Robot Raconteur sends it. Element `i`
+ * starts at entry `i * stride`, and each field is at its {@link NamedArrayViewField.offset} within the
+ * element. For `com.robotraconteur.geometry.Vector3`, x, y, and z of point `i` are `array[i * 3]`,
+ * `array[i * 3 + 1]`, and `array[i * 3 + 2]`. Complex values take two entries, real then imaginary.
+ *
+ * Received when decoding is set with {@link DecodeOptions}. Create one to send with newNamedArrayView.
+ * A NamedArrayView can be sent wherever an array of the same named array type is expected, whatever the
+ * decoding options are.
+ */
+export class NamedArrayView<A extends NumericArray = NumericArray>
+{
+    /** Qualified name of the named array type */
+    readonly typeName: string;
+    /** Number of typed array entries in one element */
+    readonly stride: number;
+    /** Number type of the typed array, such as `double` */
+    readonly elementType: string;
+
+    /**
+     * @internal Use newNamedArrayView, or receive one with DecodeOptions
+     * @param array The values of every element, in order. It belongs to the view
+     */
+    constructor(private readonly layout: NamedArrayLayout, readonly array: A)
+    {
+        this.typeName = layout.typeName;
+        this.stride = layout.length;
+        this.elementType = layout.prim.name;
+        if (!(array instanceof layout.prim.ctor)) throw dataError(`Expected ${layout.prim.name} array for named array ${layout.typeName}`);
+        if (array.length % layout.length !== 0) throw dataError("Invalid named array length for " + layout.typeName);
+    }
+
+    /** Number of named array elements */
+    get length(): number
+    {
+        return this.array.length / this.stride;
+    }
+
+    /** The fields of one element, in order */
+    get fields(): NamedArrayViewField[]
+    {
+        return this.layout.fields.map((f) => ({ name: f.name, offset: f.offset, count: f.count, type: f.layout ? f.layout.typeName : f.prim!.name, isArray: f.isArray }));
+    }
+
+    /** Offset of a field from the start of an element, in entries of the typed array */
+    fieldOffset(name: string): number
+    {
+        const f = this.layout.fields.find((x) => x.name === name);
+        if (!f) throw dataError(`Named array ${this.typeName} has no field ${name}`);
+        return f.offset;
+    }
+
+    /** Element `i` as an object, as it would be decoded without a view */
+    get(i: number): Record<string, unknown>
+    {
+        this.check(i);
+        return readNamedArray(this.layout, this.array, i * this.stride);
+    }
+
+    /** Set element `i` from an object */
+    set(i: number, value: Record<string, unknown>): void
+    {
+        this.check(i);
+        writeNamedArray(this.layout, value, this.array, i * this.stride);
+    }
+
+    /** All elements as objects */
+    toObjects(): Record<string, unknown>[]
+    {
+        const o: Record<string, unknown>[] = [];
+        for (let i = 0; i < this.array.length; i += this.stride) o.push(readNamedArray(this.layout, this.array, i));
+        return o;
+    }
+
+    private check(i: number): void
+    {
+        if (!Number.isInteger(i) || i < 0 || i >= this.length) throw new RangeError("Named array index out of range");
+    }
+}
+
 type NamedKind = "struct" | "pod" | "namedarray" | "enum" | "object";
 
 export interface ResolvedType
@@ -60,8 +172,10 @@ interface NamedArrayField
     isArray: boolean;
 }
 
-interface NamedArrayLayout
+/** @internal */
+export interface NamedArrayLayout
 {
+    typeName: string;
     prim: PrimitiveInfo;
     /** Number of typed array entries for one named array */
     length: number;
@@ -83,8 +197,28 @@ export class TypeContext
 {
     private resolved = new Map<string, ResolvedType>();
     private layouts = new Map<string, NamedArrayLayout>();
+    private decode_source: Iterable<string> | undefined | null = null;
+    private view_types = new Set<string>();
 
-    constructor(public defs: Map<string, ServiceDefinition>) {}
+    /**
+     * @param defs Service definitions by name
+     * @param decodeOptions Returns the decoding options in effect. Read on every decode, so it can change
+     */
+    constructor(public defs: Map<string, ServiceDefinition>, private readonly decodeOptions: () => DecodeOptions | undefined = () => undefined) {}
+
+    /** True if arrays of this named array type are decoded as NamedArrayView */
+    namedArrayAsView(r: ResolvedType): boolean
+    {
+        const o = this.decodeOptions();
+        if (o?.namedArrays === "view") return true;
+        // The set is made again only when viewTypes is replaced
+        if (o?.viewTypes !== this.decode_source)
+        {
+            this.decode_source = o?.viewTypes;
+            this.view_types = new Set(o?.viewTypes ?? []);
+        }
+        return this.view_types.has(r.qualifiedName);
+    }
 
     resolve(name: string, scope: ServiceDefinition): ResolvedType
     {
@@ -151,7 +285,7 @@ export class TypeContext
             fields.push(f);
         }
         if (!prim) throw dataError("Named array has no fields: " + r.qualifiedName);
-        l = { prim, length: offset, fields };
+        l = { typeName: r.qualifiedName, prim, length: offset, fields };
         this.layouts.set(r.qualifiedName, l);
         return l;
     }
@@ -507,21 +641,42 @@ function packNamedArrayItems(name: string, items: Record<string, unknown>[], r: 
     return MessageElement.nested(name, DataTypes.namedarray_array_t, r.qualifiedName, [new MessageElement("array", l.prim.type, a)]);
 }
 
+/** Pack a NamedArrayView without visiting its elements */
+function packNamedArrayView(name: string, v: NamedArrayView, r: ResolvedType, ctx: TypeContext): MessageElement
+{
+    const l = ctx.namedArrayLayout(r);
+    if (v.typeName !== r.qualifiedName) throw dataError(`Expected ${r.qualifiedName} for ${name}, not ${v.typeName}`);
+    if (v.stride !== l.length || !(v.array instanceof l.prim.ctor)) throw dataError(`Named array layout of ${v.typeName} does not match for ${name}`);
+    return MessageElement.nested(name, DataTypes.namedarray_array_t, r.qualifiedName, [new MessageElement("array", l.prim.type, v.array)]);
+}
+
+function packNamedArrayValues(name: string, v: unknown, r: ResolvedType, ctx: TypeContext): { count: number; element: MessageElement }
+{
+    if (v instanceof NamedArrayView) return { count: v.length, element: packNamedArrayView(name, v, r, ctx) };
+    const items = toItems(v, name);
+    return { count: items.length, element: packNamedArrayItems(name, items, r, ctx) };
+}
+
 function packNamedArray(name: string, t: TypeDefinition, v: unknown, r: ResolvedType, ctx: TypeContext): MessageElement
 {
     if (v === null || v === undefined) throw dataError("Expected named array for " + name);
     if (t.array === "multidimarray")
     {
         const { dims, array } = toMultiDim(v, t, name);
-        const items = toItems(array, name);
-        if (dims.reduce((a, b) => a * b, 1) !== items.length) throw dataError("Array dimension mismatch for " + name);
-        return MessageElement.nested(name, DataTypes.namedarray_multidimarray_t, r.qualifiedName, [new MessageElement("dims", DataTypes.uint32_t, dims), packNamedArrayItems("array", items, r, ctx)]);
+        const { count, element } = packNamedArrayValues("array", array, r, ctx);
+        if (dims.reduce((a, b) => a * b, 1) !== count) throw dataError("Array dimension mismatch for " + name);
+        return MessageElement.nested(name, DataTypes.namedarray_multidimarray_t, r.qualifiedName, [new MessageElement("dims", DataTypes.uint32_t, dims), element]);
     }
     if (t.array)
     {
-        const items = toItems(v, name);
-        verifyArrayLength(items.length, t);
-        return packNamedArrayItems(name, items, r, ctx);
+        const { count, element } = packNamedArrayValues(name, v, r, ctx);
+        verifyArrayLength(count, t);
+        return element;
+    }
+    if (v instanceof NamedArrayView)
+    {
+        if (v.length !== 1) throw dataError("Expected a single named array for " + name);
+        return packNamedArrayView(name, v, r, ctx);
     }
     return packNamedArrayItems(name, [v as Record<string, unknown>], r, ctx);
 }
@@ -657,14 +812,28 @@ function unpackNamedArrayItems(e: MessageElement, r: ResolvedType, ctx: TypeCont
     return items;
 }
 
+function unpackNamedArrayView(e: MessageElement, r: ResolvedType, ctx: TypeContext): NamedArrayView
+{
+    // The typed array is already a copy made when the message was read, so it can be handed out as is
+    const a = findData(e.castNested(DataTypes.namedarray_array_t).elements, "array") as NumericArray;
+    return new NamedArrayView(ctx.namedArrayLayout(r), a);
+}
+
 function unpackNamedArray(e: MessageElement, t: TypeDefinition, r: ResolvedType, ctx: TypeContext): unknown
 {
+    const view = !!t.array && ctx.namedArrayAsView(r);
     if (t.array === "multidimarray")
     {
         const l = e.castNested(DataTypes.namedarray_multidimarray_t).elements;
         const a = l.find((x) => x.elementName === "array");
         if (!a) throw dataError("Message element not found: array");
-        return { dims: findData(l, "dims"), array: unpackNamedArrayItems(a, r, ctx) };
+        return { dims: findData(l, "dims"), array: view ? unpackNamedArrayView(a, r, ctx) : unpackNamedArrayItems(a, r, ctx) };
+    }
+    if (view)
+    {
+        const v = unpackNamedArrayView(e, r, ctx);
+        verifyArrayLength(v.length, t);
+        return v;
     }
     const items = unpackNamedArrayItems(e, r, ctx);
     if (t.array)

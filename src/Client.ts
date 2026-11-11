@@ -19,6 +19,7 @@ import { NodeID } from "./NodeID.js";
 import { RobotRaconteurNode } from "./Node.js";
 import { entryToError, errorToEntry } from "./MessageError.js";
 import { packElement, TypeContext, unpackElement } from "./Pack.js";
+import type { DecodeOptions } from "./Pack.js";
 import { EntryDefinition, MemberDefinition, MemberKind, parseServiceDefinition, ServiceDefinition, TypeDefinition } from "./ServiceDefinition.js";
 import { ITransportConnection, parseConnectionUrl, Transport } from "./Transport.js";
 import { PipeAckHandler, PipeClosedHandler, PipeHandle, PipePacketHandler, PipePacketValue } from "./PipeMember.js";
@@ -862,11 +863,24 @@ export class ClientContext
     private last_received = Date.now();
     private closing = false;
     private close_listeners = new Set<() => void>();
+    private decode_options: DecodeOptions | undefined;
 
     /** @param node The node the connection belongs to */
     constructor(readonly node: RobotRaconteurNode)
     {
-        this.types = new TypeContext(new Map(node.serviceTypes));
+        this.types = new TypeContext(new Map(node.serviceTypes), () => this.decodeOptions);
+    }
+
+    /** How this connection decodes received values. The node's decodeOptions unless set */
+    get decodeOptions(): DecodeOptions
+    {
+        return this.decode_options ?? this.node.decodeOptions;
+    }
+
+    /** Set how this connection decodes received values, or undefined to use the node's decodeOptions */
+    set decodeOptions(options: DecodeOptions | undefined)
+    {
+        this.decode_options = options;
     }
 
     /** @internal Connect to a service. Use RobotRaconteurNode.connectService instead */

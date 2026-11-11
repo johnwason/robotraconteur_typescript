@@ -29,10 +29,11 @@ export type { MemberDirection, TimeSpec, WireClosedHandler, WireValue, WireValue
 export { RobotRaconteurError } from "./Error.js";
 export { RobotRaconteurNode } from "./Node.js";
 export { NodeID } from "./NodeID.js";
-export { VarValue } from "./Pack.js";
-export type { MultiDimArray } from "./Pack.js";
+export { NamedArrayView, VarValue } from "./Pack.js";
+export type { DecodeOptions, MultiDimArray, NamedArrayViewField } from "./Pack.js";
+export type { NumericArray } from "./DataTypes.js";
 export { parseServiceDefinition, parseTypeDefinition, ServiceDefinitionParseError } from "./ServiceDefinition.js";
-export { getConstants, newStructure } from "./ServiceTypes.js";
+export { getConstants, newNamedArrayView, newStructure } from "./ServiceTypes.js";
 export type {
     ConstantDefinition,
     ContainerType,

@@ -18,7 +18,7 @@ Values are packed and unpacked using the service definition, so they are plain J
 | Complex arrays | `Float64Array` or `Float32Array` with interleaved real and imaginary values |
 | Multidimensional arrays (`double[*]`) | {@link robotraconteur!MultiDimArray | MultiDimArray}: `{ dims, array }` in column-major order |
 | `struct`, `pod`, `namedarray` | Plain objects with the declared field names |
-| Arrays of `pod` or `namedarray` | `Array` of plain objects |
+| Arrays of `pod` or `namedarray` | `Array` of plain objects. Arrays of `namedarray` can instead be received as a {@link robotraconteur!NamedArrayView | NamedArrayView}, see [Large arrays](#large-arrays) |
 | `{list}` | `Array` |
 | `{int32}`, `{string}` | `Map` (plain objects are also accepted when sending `{string}`) |
 | `enum` | `number` |
@@ -43,3 +43,27 @@ Structures are plain objects. {@link robotraconteur!newStructure | newStructure}
 ```js
 const state = newStructure(robot, "com.robotraconteur.robotics.robot.RobotStateSensorData");
 ```
+
+## Large arrays
+
+Arrays of named arrays, such as the points of a `com.robotraconteur.pointcloud.PointCloudf`, are sent as one numeric array. By default each element is turned into an object, which is slow and uses a lot of memory for millions of elements. Decoding them as a {@link robotraconteur!NamedArrayView | NamedArrayView} instead keeps the typed array that was received, without any work per element:
+
+```js
+// Only these types, wherever they appear. Other named arrays are still objects
+node.decodeOptions = { viewTypes: ["com.robotraconteur.pointcloud.PointCloudPointf"] };
+// Or every array of named arrays
+node.decodeOptions = { namedArrays: "view" };
+```
+
+The options can also be set for one connection with `client.context.decodeOptions`, or for the clients of a subscription with the `decodeOptions` subscription option or `subscription.decodeOptions`. Single named arrays, such as one `Pose`, are always objects.
+
+Element `i` of a view starts at `view.array[i * view.stride]`, and `view.fieldOffset(name)` gives a field's position within an element. `view.get(i)` and `view.toObjects()` give objects when they are needed. The typed array belongs to the view, so it can be passed to WebGL, or transferred to a worker with `view.array.buffer`.
+
+A view can be sent wherever an array of its named array type is expected, without copying, whatever the decode options are. {@link robotraconteur!newNamedArrayView | newNamedArrayView} creates one to fill:
+
+```js
+const points = newNamedArrayView(client, "com.robotraconteur.geometry.Vector3", 1000);
+points.array[0] = 1.5; // x of point 0
+```
+
+Use named arrays or numeric arrays for large data. Arrays of `pod` are sent with a separate message element for every field of every element, so they are always slow to decode.

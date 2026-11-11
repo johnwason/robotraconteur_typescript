@@ -14,7 +14,7 @@
 
 import { createServer, connect, Server, Socket } from "node:net";
 import assert from "node:assert/strict";
-import { RobotRaconteurError, RobotRaconteurNode, ServiceStub, ServiceSubscription, subscribeService } from "../../src/index.js";
+import { NamedArrayView, RobotRaconteurError, RobotRaconteurNode, ServiceStub, ServiceSubscription, subscribeService } from "../../src/index.js";
 import type { Transport } from "../../src/index.js";
 import type { ClientTest } from "./ClientTests.js";
 
@@ -353,6 +353,30 @@ export function subscriptionTests(node: RobotRaconteurNode, proxy: TcpProxy, tar
             const accepted = proxy.accepted;
             await new Promise((resolve) => setTimeout(resolve, 200));
             assert.equal(proxy.accepted, accepted, "reconnected after shutdown");
+        }
+    });
+
+    tests.push({
+        name: "subscription: decode options apply to its clients",
+        run: async () =>
+        {
+            proxy.refusing = false;
+            const s = new ServiceSubscription(node, { connectRetryDelay: 50, decodeOptions: { namedArrays: "view" } });
+            s.initServiceURL([url("RobotRaconteurTestService2")]);
+            try
+            {
+                const c = await s.getDefaultClientWait(TIMEOUT);
+                assert.ok((await c.getProperty("testnamedarray3")) instanceof NamedArrayView);
+                // Other connections are unchanged
+                assert.equal(node.decodeOptions.namedArrays, undefined);
+                // A change applies to the connected client
+                s.decodeOptions = undefined;
+                assert.ok(Array.isArray(await c.getProperty("testnamedarray3")));
+            }
+            finally
+            {
+                s.close();
+            }
         }
     });
 

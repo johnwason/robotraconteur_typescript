@@ -17,6 +17,7 @@ import { MessageErrorType } from "./DataTypes.js";
 import { RobotRaconteurError } from "./Error.js";
 import type { RobotRaconteurNode } from "./Node.js";
 import { NodeID } from "./NodeID.js";
+import type { DecodeOptions } from "./Pack.js";
 import type { PipeHandle, PipePacketValue } from "./PipeMember.js";
 import { parseConnectionUrl } from "./Transport.js";
 import { Waiters } from "./WireMember.js";
@@ -90,6 +91,8 @@ export interface ServiceSubscriptionOptions
     connectRetryDelay?: number;
     /** Give up on a service after this many consecutive failures. Negative retries forever */
     connectErrorLimit?: number;
+    /** How the connected clients decode received values. The node's decodeOptions if not set */
+    decodeOptions?: DecodeOptions;
 }
 
 /** Called when a subscription connects or loses a service */
@@ -137,6 +140,7 @@ export class ServiceSubscription
     private wires = new Set<WireSubscription>();
     private pipes = new Set<PipeSubscription>();
     private service_url: string[] | null = null;
+    private decode_options: DecodeOptions | undefined;
     private readonly shutdown_hook = () => this.close();
 
     /** @param node The node to connect from. The subscription closes when it shuts down */
@@ -144,7 +148,24 @@ export class ServiceSubscription
     {
         this.connectRetryDelay = options.connectRetryDelay ?? 15000;
         this.connect_error_limit = options.connectErrorLimit ?? 25;
+        this.decode_options = options.decodeOptions;
         node.addShutdownHook(this.shutdown_hook);
+    }
+
+    /** How the connected clients decode received values. The node's decodeOptions if not set */
+    get decodeOptions(): DecodeOptions | undefined
+    {
+        return this.decode_options;
+    }
+
+    /** Set how the clients decode received values. Applies to the connected clients and later ones */
+    set decodeOptions(options: DecodeOptions | undefined)
+    {
+        this.decode_options = options;
+        for (const c of this.clients.values())
+        {
+            if (c.client) c.client.context.decodeOptions = options;
+        }
     }
 
     /** Used by subscribeService */
@@ -188,6 +209,7 @@ export class ServiceSubscription
             try
             {
                 stub = await this.node.connectService(c.urls, c.username, c.credentials, c.objectType);
+                stub.context.decodeOptions = this.decode_options;
             }
             catch (e)
             {

@@ -16,6 +16,7 @@ import { ClientContext, ServiceStub } from "./Client.js";
 import type { ObjectLockFlags } from "./Client.js";
 import { Message } from "./Message.js";
 import { NodeID } from "./NodeID.js";
+import type { DecodeOptions } from "./Pack.js";
 import { parseServiceDefinition, ServiceDefinition } from "./ServiceDefinition.js";
 import { Endpoint, ITransportConnection, parseConnectionUrl, Transport } from "./Transport.js";
 import { errorReturnMessage } from "./MessageError.js";
@@ -44,6 +45,11 @@ export class RobotRaconteurNode
     transportInactivityTimeout = 600000;
     /** A client is closed after this many milliseconds without messages from its service */
     endpointInactivityTimeout = 600000;
+    /**
+     * How connections decode received values, unless set on a connection with
+     * ClientContext.decodeOptions
+     */
+    decodeOptions: DecodeOptions = {};
 
     /** The service definitions registered with registerServiceType, by name */
     readonly serviceTypes = new Map<string, ServiceDefinition>();

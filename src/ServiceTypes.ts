@@ -14,8 +14,9 @@
 
 import type { ServiceStub } from "./Client.js";
 import { MessageErrorType, primitivesByName } from "./DataTypes.js";
-import type { PrimitiveInfo } from "./DataTypes.js";
+import type { NumericArray, PrimitiveInfo } from "./DataTypes.js";
 import { RobotRaconteurError } from "./Error.js";
+import { NamedArrayView } from "./Pack.js";
 import type { TypeContext } from "./Pack.js";
 import type { ConstantDefinition, ServiceDefinition, TypeDefinition } from "./ServiceDefinition.js";
 
@@ -66,6 +67,25 @@ export function newStructure(client: ServiceStub, type: string): Record<string, 
         throw new RobotRaconteurError(MessageErrorType.InvalidArgument, "RobotRaconteur.InvalidArgument", `${type} is not a structure, pod, or named array`);
     }
     return Object.fromEntries(r.entry!.members.map((m) => [m.name, defaultValue(m.type!, r.def, types)]));
+}
+
+/**
+ * Create a {@link NamedArrayView} of a named array type known to a client, for sending arrays of named
+ * arrays without building an object per element.
+ * @param client Any object of the connection that knows the type
+ * @param type Named array type, such as `com.robotraconteur.geometry.Vector3`
+ * @param countOrArray Number of zeroed elements, or a typed array of the type's number type to use as is
+ */
+export function newNamedArrayView(client: ServiceStub, type: string, countOrArray: number | NumericArray): NamedArrayView
+{
+    const types = client.context.types;
+    const r = types.resolve(type, client.context.serviceDefForType(client.objectType));
+    if (r.kind !== "namedarray")
+    {
+        throw new RobotRaconteurError(MessageErrorType.InvalidArgument, "RobotRaconteur.InvalidArgument", `${type} is not a named array`);
+    }
+    const l = types.namedArrayLayout(r);
+    return new NamedArrayView(l, typeof countOrArray === "number" ? new l.prim.ctor(countOrArray * l.length) : countOrArray);
 }
 
 function parseNumber(s: string, p: PrimitiveInfo): number | bigint

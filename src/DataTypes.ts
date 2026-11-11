@@ -202,6 +202,7 @@ export const enum TransportCapabilityCode
     Message4StringTableStandardTable = 0x00000004
 }
 
+/** The typed arrays that hold numeric arrays. 64 bit integers use BigInt64Array and BigUint64Array */
 export type NumericArray =
     | Float64Array
     | Float32Array
