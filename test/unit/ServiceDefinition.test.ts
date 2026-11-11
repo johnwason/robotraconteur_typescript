@@ -155,6 +155,22 @@ test("parser rejects malformed definitions", () =>
     for (const s of bad) assert.throws(() => parseServiceDefinition(s), Error, s);
 });
 
+test("entries must be in the same order as Core requires", () =>
+{
+    const object = "object o\nproperty double p\nend\n";
+    const order_errors: [string, RegExp][] = [
+        [svc(object + "exception e"), /exception must be before struct and object/],
+        [svc(object + "constant int32 c 1"), /constant must be before struct and object/],
+        [svc("struct s\nfield double f\nend\nenum e\na = 1\nend"), /enum must be before struct and object/],
+        [svc("using a.b.c\nimport a.b"), /import must be before all but options/],
+        [svc("exception e\nusing a.b.c"), /using must be after imports/],
+        [svc("import a.b\nstdver 0.10"), /stdver must be first after service name/]
+    ];
+    for (const [s, message] of order_errors) assert.throws(() => parseServiceDefinition(s), message, s);
+    // Exceptions, constants, and enums may be in any order before the first structure or object
+    parseServiceDefinition(svc("enum e\na = 1\nend\nexception x\nconstant int32 c 1\n" + object));
+});
+
 function verifies(body: string): void
 {
     verifyServiceDefinition(parseServiceDefinition(svc(body)));

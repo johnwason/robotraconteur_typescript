@@ -16,7 +16,8 @@ import { ClientContext, ServiceStub } from "./Client.js";
 import { Message } from "./Message.js";
 import { NodeID } from "./NodeID.js";
 import { parseServiceDefinition, ServiceDefinition } from "./ServiceDefinition.js";
-import { Endpoint, parseConnectionUrl, Transport } from "./Transport.js";
+import { Endpoint, ITransportConnection, parseConnectionUrl, ServerTransportConnection, SpecialRequestHandler, Transport } from "./Transport.js";
+import { errorReturnMessage } from "./MessageError.js";
 import { RobotRaconteurError } from "./Error.js";
 import { MessageErrorType } from "./DataTypes.js";
 
@@ -35,6 +36,10 @@ export class RobotRaconteurNode
     endpointInactivityTimeout = 600000;
 
     readonly serviceTypes = new Map<string, ServiceDefinition>();
+    /** The text of service definitions registered from text, which services send to clients */
+    readonly serviceTypeTexts = new Map<string, string>();
+    /** Answers requests to the node itself. Set when the node hosts services */
+    specialRequestHandler: SpecialRequestHandler | null = null;
 
     private transports: Transport[] = [];
     private endpoints = new Map<number, Endpoint>();
@@ -51,6 +56,8 @@ export class RobotRaconteurNode
     {
         const d = typeof def === "string" ? parseServiceDefinition(def) : def;
         this.serviceTypes.set(d.name, d);
+        if (typeof def === "string") this.serviceTypeTexts.set(d.name, def);
+        else this.serviceTypeTexts.delete(d.name);
         return d;
     }
 
@@ -192,9 +199,51 @@ export class RobotRaconteurNode
         this.clients.delete(c as ClientContext);
     }
 
-    messageReceived(m: Message): void
+    /**
+     * Route a message to its endpoint. If it cannot be delivered, requests in it are answered with
+     * an error through the connection it arrived on, as Core does.
+     */
+    messageReceived(m: Message, connection?: ITransportConnection): void
     {
-        if (!m.header.receiverNodeID.equals(this.nodeID)) return;
-        this.endpoints.get(m.header.receiverEndpoint)?.messageReceived(m);
+        if (!m.header.receiverNodeID.equals(this.nodeID))
+        {
+            this.replyError(m, connection, MessageErrorType.NodeNotFound, "RobotRaconteur.NodeNotFound", "Could not find route to remote node");
+            return;
+        }
+        const e = this.endpoints.get(m.header.receiverEndpoint);
+        if (!e)
+        {
+            this.replyError(m, connection, MessageErrorType.InvalidEndpoint, "RobotRaconteur.InvalidEndpoint", "Invalid destination endpoint");
+            return;
+        }
+        e.messageReceived(m);
+    }
+
+    private replyError(m: Message, connection: ITransportConnection | undefined, code: MessageErrorType, name: string, message: string): void
+    {
+        if (!connection) return;
+        const r = errorReturnMessage(m, code, name, message);
+        if (r.entries.length === 0) return;
+        try
+        {
+            connection.sendMessage(r);
+        }
+        catch
+        {
+            // The connection has closed
+        }
+    }
+
+    /** Answer a request to the node itself, which a client sends before it has an endpoint */
+    specialRequest(m: Message, connection: ServerTransportConnection): Promise<Message | null>
+    {
+        if (this.specialRequestHandler) return this.specialRequestHandler(m, connection);
+        return Promise.resolve(errorReturnMessage(m, MessageErrorType.ServiceNotFound, "RobotRaconteur.ServiceNotFound", "Service not found"));
+    }
+
+    /** The endpoint with a local endpoint number, if it exists */
+    getEndpoint(local_endpoint: number): Endpoint | undefined
+    {
+        return this.endpoints.get(local_endpoint);
     }
 }

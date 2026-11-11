@@ -52,4 +52,4 @@ export type {
     WireValueSubscriptionHandler
 } from "./Subscription.js";
 export { parseConnectionUrl } from "./Transport.js";
-export type { Endpoint, ITransportConnection, ParsedConnectionUrl, Transport } from "./Transport.js";
+export type { Endpoint, ITransportConnection, ParsedConnectionUrl, ServerTransportConnection, SpecialRequestHandler, Transport } from "./Transport.js";

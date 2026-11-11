@@ -424,6 +424,13 @@ export function parseServiceDefinition(text: string): ServiceDefinition
     const lines = readLines(text);
     const pos = { i: 0 };
     let version_from_option = false;
+    // The latest kind of entry seen, to enforce the same order as Core: stdver 2, import 4, using 5,
+    // exception 6, constant 7, enum 8, and 9 for structures and objects
+    let order = 0;
+    const before = (limit: number, message: string, line: Line) =>
+    {
+        if (order >= limit) throw new ServiceDefinitionParseError(message, line.number);
+    };
 
     while (pos.i < lines.length)
     {
@@ -445,6 +452,8 @@ export function parseServiceDefinition(text: string): ServiceDefinition
         switch (keyword)
         {
         case "stdver":
+            before(2, "stdver must be first after service name", line);
+            order = 2;
             if (def.stdVer !== undefined) throw new ServiceDefinitionParseError("stdver already specified", line.number);
             if (!/^\d+(?:\.\d+){1,3}$/.test(rest)) throw new ServiceDefinitionParseError("Invalid stdver", line.number);
             def.stdVer = rest;
@@ -462,22 +471,36 @@ export function parseServiceDefinition(text: string): ServiceDefinition
             }
             break;
         case "import":
+            before(5, "import must be before all but options", line);
+            order = 4;
             def.imports.push(parseIdentifier(rest, "import", line));
             break;
         case "using":
             {
+                before(6, "using must be after imports and before all others except options", line);
+                order = 5;
                 const u = R_USING.exec(rest);
                 if (!u) throw new ServiceDefinitionParseError("Format error for using definition", line.number);
                 def.using.push({ qualifiedName: u[1]!, unqualifiedName: u[2] ?? u[1]!.substring(u[1]!.lastIndexOf(".") + 1) });
             }
             break;
         case "exception":
+            before(9, "exception must be before struct and object", line);
+            order = 6;
             def.exceptions.push(withDoc<ExceptionDefinition>({ name: parseIdentifier(rest, "exception", line) }, line.doc));
             break;
         case "constant":
+            before(9, "constant must be before struct and object", line);
+            order = 7;
             def.constants.push(parseConstant(rest, line));
             break;
+        case "enum":
+            before(9, "enum must be before struct and object", line);
+            order = 8;
+            parseBlock(keyword, line, lines, pos, def);
+            break;
         default:
+            order = 9;
             parseBlock(keyword, line, lines, pos, def);
         }
     }

@@ -17,7 +17,9 @@ import { RobotRaconteurError } from "./Error.js";
 import { deserializeMessage, findElement, Message, MessageElement, MessageEntry, serializeMessage } from "./Message.js";
 import { NodeID } from "./NodeID.js";
 import type { RobotRaconteurNode } from "./Node.js";
-import type { Endpoint, ITransportConnection } from "./Transport.js";
+import { errorReturnMessage, errorToEntry } from "./MessageError.js";
+import { isSpecialRequest } from "./Transport.js";
+import type { Endpoint, ServerTransportConnection } from "./Transport.js";
 
 /** The Robot Raconteur TCP Transport standard limits WebSocket frames to 64 KB */
 const MAX_FRAME_SIZE = 65536;
@@ -76,7 +78,7 @@ export interface StreamTransportParent
     /** Connection is closed if the remote node has not been heard from for this long in milliseconds */
     defaultReceiveTimeout: number;
     maxMessageSize: number;
-    removeConnection(c: StreamClientConnection): void;
+    removeConnection(c: StreamConnection): void;
 }
 
 interface QueuedMessage
@@ -174,8 +176,11 @@ interface StreamOpWait
     reject: (e: Error) => void;
 }
 
-/** The Basic Stream Protocol for a client: framing, send queue, heartbeat, and connection handshake */
-export class StreamClientConnection implements ITransportConnection
+/**
+ * The Basic Stream Protocol: framing, send queue, heartbeat, and the connection handshake. A client
+ * opens the connection with connect(), and a server takes an accepted socket with accept().
+ */
+export class StreamConnection implements ServerTransportConnection
 {
     remoteNodeID = NodeID.Any;
     useCombinedConnection = false;
@@ -183,6 +188,12 @@ export class StreamClientConnection implements ITransportConnection
     private socket!: SocketAdapter;
     private send_queue!: SendQueue;
     private connected = false;
+    /** Set for a connection accepted by a server */
+    private server = false;
+    /** Set once a server has answered CreateConnection */
+    private created = false;
+    private handshake_timer: ReturnType<typeof setTimeout> | undefined;
+    private endpoints = new Set<Endpoint>();
 
     private recv_buf = new Uint8Array(65536);
     private recv_len = 0;
@@ -193,24 +204,50 @@ export class StreamClientConnection implements ITransportConnection
     private tlastrec = Date.now();
     private tlastrec_mes = Date.now();
 
-    constructor(private parent: StreamTransportParent, private target_nodeid: NodeID, private target_nodename: string, private endpoint: Endpoint) {}
+    /** The node to connect to, for a client. A client also gives its endpoint */
+    constructor(private parent: StreamTransportParent, private target_nodeid = NodeID.Any, private target_nodename = "", endpoint?: Endpoint)
+    {
+        if (endpoint) this.endpoints.add(endpoint);
+    }
 
     /** True once TLS is in use */
     secure = false;
 
-    async connect(open: SocketOpener, tls?: StreamTlsOptions): Promise<void>
+    /** True for a connection accepted by a server */
+    get isServer(): boolean
     {
-        const events: SocketEvents = {
+        return this.server;
+    }
+
+    private events(): SocketEvents
+    {
+        return {
             onData: (frame) => this.dataReceived(frame),
             onClose: () => this.close()
         };
-        this.socket = await open(events);
+    }
 
+    private start(socket: SocketAdapter): void
+    {
+        this.socket = socket;
         this.send_queue = new SendQueue((frame) => this.socket.write(frame), () =>
         {
             this.tlastsend = Date.now();
         }, () => this.close());
         this.connected = true;
+    }
+
+    private startHeartbeat(): void
+    {
+        this.tlastsend = this.tlastrec = this.tlastrec_mes = Date.now();
+        this.heartbeat = setInterval(() => this.doHeartbeat(), 500);
+        (this.heartbeat as unknown as { unref?: () => void }).unref?.();
+    }
+
+    async connect(open: SocketOpener, tls?: StreamTlsOptions): Promise<void>
+    {
+        const events = this.events();
+        this.start(await open(events));
 
         try
         {
@@ -222,10 +259,33 @@ export class StreamClientConnection implements ITransportConnection
             this.close();
             throw e;
         }
+        this.startHeartbeat();
+    }
 
-        this.tlastsend = this.tlastrec = this.tlastrec_mes = Date.now();
-        this.heartbeat = setInterval(() => this.doHeartbeat(), 500);
-        (this.heartbeat as unknown as { unref?: () => void }).unref?.();
+    /**
+     * Serve a socket accepted from a client. The client must create the connection within
+     * handshake_timeout milliseconds, or the socket is closed.
+     */
+    async accept(open: SocketOpener, handshake_timeout: number): Promise<void>
+    {
+        this.server = true;
+        this.start(await open(this.events()));
+        this.handshake_timer = setTimeout(() =>
+        {
+            if (!this.created) this.close();
+        }, handshake_timeout);
+        (this.handshake_timer as unknown as { unref?: () => void }).unref?.();
+        this.startHeartbeat();
+    }
+
+    attachEndpoint(e: Endpoint): void
+    {
+        this.endpoints.add(e);
+    }
+
+    detachEndpoint(e: Endpoint): void
+    {
+        this.endpoints.delete(e);
     }
 
     /** Send a stream operation and wait for its reply, failing if the reply reports an error */
@@ -381,6 +441,9 @@ export class StreamClientConnection implements ITransportConnection
         {
             switch (entry.entryType)
             {
+            case MessageEntryType.StreamOp:
+                this.processStreamOp(m);
+                return;
             case MessageEntryType.StreamOpRet:
                 {
                     const w = this.streamop_wait;
@@ -403,8 +466,120 @@ export class StreamClientConnection implements ITransportConnection
             }
         }
 
+        if (this.server)
+        {
+            // Nothing but stream operations is accepted until the client has created the connection,
+            // and afterwards only from the node that created it
+            if (!this.created)
+            {
+                this.close();
+                return;
+            }
+            if (!m.header.senderNodeID.equals(this.remoteNodeID))
+            {
+                this.sendMessage(errorReturnMessage(m, MessageErrorType.NodeNotFound, "RobotRaconteur.NodeNotFound", "Invalid sender node"));
+                return;
+            }
+        }
+
         this.tlastrec_mes = this.tlastrec;
-        this.parent.node.messageReceived(m);
+        if (isSpecialRequest(m))
+        {
+            void this.processSpecialRequest(m);
+            return;
+        }
+        this.parent.node.messageReceived(m, this);
+    }
+
+    private async processSpecialRequest(m: Message): Promise<void>
+    {
+        try
+        {
+            const ret = await this.parent.node.specialRequest(m, this);
+            if (ret && ret.entries.length > 0 && this.connected) this.sendMessage(ret);
+        }
+        catch
+        {
+            this.close();
+        }
+    }
+
+    /** Answer a stream operation from a client, as a server */
+    private processStreamOp(m: Message): void
+    {
+        const req = m.entries[0]!;
+        const node = this.parent.node;
+        const r = new Message();
+        r.header.senderNodeID = node.nodeID;
+        r.header.senderNodeName = node.nodeName;
+        r.header.receiverNodeID = m.header.senderNodeID;
+        r.header.receiverNodeName = m.header.senderNodeName;
+        const ret = new MessageEntry(MessageEntryType.StreamOpRet, req.memberName);
+        r.entries.push(ret);
+
+        try
+        {
+            switch (req.memberName)
+            {
+            case "GetRemoteNodeID":
+                break;
+            case "CreateConnection":
+                this.serverCreateConnection(m, ret);
+                break;
+            case "STARTTLS":
+                throw connectionError("This service does not support TLS");
+            default:
+                throw new RobotRaconteurError(MessageErrorType.ProtocolError, "RobotRaconteur.ProtocolError", "Unknown stream operation");
+            }
+        }
+        catch (e)
+        {
+            ret.elements = [];
+            errorToEntry(e, ret);
+        }
+        try
+        {
+            this.sendMessage(r);
+        }
+        catch
+        {
+            // The connection has closed
+        }
+    }
+
+    /** Accept CreateConnection for this node, agreeing on the capabilities both sides support, as Core does */
+    private serverCreateConnection(m: Message, ret: MessageEntry): void
+    {
+        const node = this.parent.node;
+        const h = m.header;
+        const for_node = h.receiverNodeID.isAnyNode || h.receiverNodeID.equals(node.nodeID);
+        if (!for_node || (h.receiverNodeName !== "" && h.receiverNodeName !== node.nodeName))
+        {
+            throw new RobotRaconteurError(MessageErrorType.NodeNotFound, "RobotRaconteur.NodeNotFound", "Node not found");
+        }
+
+        const caps = findElement(m.entries[0]!.elements, "capabilities")?.data;
+        if (caps instanceof Uint32Array)
+        {
+            let message2 = 0;
+            for (const cap of caps)
+            {
+                if (((cap & TransportCapabilityCode.PageMask) >>> 0) === TransportCapabilityCode.Message2BasicPage)
+                {
+                    message2 = cap & (TransportCapabilityCode.Message2BasicEnable | TransportCapabilityCode.Message2BasicConnectCombined);
+                }
+            }
+            if ((message2 & TransportCapabilityCode.Message2BasicEnable) === 0)
+            {
+                throw new RobotRaconteurError(MessageErrorType.ProtocolError, "RobotRaconteur.ProtocolError", "Transport must support Message Version 2");
+            }
+            // Message Version 4 is not offered, so the client continues with Message Version 2
+            ret.addElement(new MessageElement("capabilities", DataTypes.uint32_t, Uint32Array.of((message2 | TransportCapabilityCode.Message2BasicPage) >>> 0)));
+        }
+
+        this.remoteNodeID = h.senderNodeID;
+        this.created = true;
+        clearTimeout(this.handshake_timer);
     }
 
     private sendEmptyResponse(m: Message, entry: MessageEntry): void
@@ -470,6 +645,7 @@ export class StreamClientConnection implements ITransportConnection
         if (!this.connected) return;
         this.connected = false;
         clearInterval(this.heartbeat);
+        clearTimeout(this.handshake_timer);
         this.parent.removeConnection(this);
 
         const w = this.streamop_wait;
@@ -485,6 +661,17 @@ export class StreamClientConnection implements ITransportConnection
         {
             // Already closing
         }
-        this.endpoint.transportConnectionClosed();
+        for (const e of [...this.endpoints])
+        {
+            try
+            {
+                e.transportConnectionClosed();
+            }
+            catch
+            {
+                // Each endpoint is notified regardless
+            }
+        }
+        this.endpoints.clear();
     }
 }
