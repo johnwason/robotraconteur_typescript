@@ -4,7 +4,7 @@ title: Getting started
 
 # Getting started
 
-`robotraconteur` is a small TypeScript client for [Robot Raconteur](https://github.com/robotraconteur/robotraconteur). It runs in web browsers and in Node.js, connects to services over WebSockets, and has no dependencies. Services can be written in any Robot Raconteur language, such as Python, C++, C#, or [robotraconteur-node](https://github.com/johnwason/robotraconteur_typescript_node) for Node.js.
+`robotraconteur` is a small TypeScript client for [Robot Raconteur](https://github.com/robotraconteur/robotraconteur). It runs in web browsers and in Node.js, connects to services over WebSockets, and has no dependencies. Services can be written in any Robot Raconteur language, such as Python, C++, C#, or [robotraconteur-node](https://github.com/robotraconteur/robotraconteur_typescript_node) for Node.js.
 
 ## Try it with Reynard the Robot
 
@@ -22,10 +22,10 @@ You only need a web browser and Python. No Node.js or TypeScript is required.
 
 ## In a web page
 
-Copy `examples/robotraconteur.min.js` next to your HTML file and load it with a script tag. Everything is then available under the name `RobotRaconteur`.
+Load `robotraconteur.min.js` with a script tag, from a CDN or from a copy of `examples/robotraconteur.min.js` next to your HTML file. Everything is then available under the name `RobotRaconteur`.
 
 ```html
-<script src="robotraconteur.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/robotraconteur@0.1.0/dist/robotraconteur.min.js"></script>
 <script>
     async function main() {
         const node = new RobotRaconteur.RobotRaconteurNode();
@@ -55,7 +55,7 @@ Install the package and import what you need. Bundlers such as Vite, webpack, an
 npm install robotraconteur
 ```
 
-The package is not on npm yet. Until it is, build it from the repository with `npm run build` and install the folder.
+The API may change in any release before 1.0, so pin the version and read the changelog before upgrading.
 
 ```ts
 import { BrowserWebSocketTransport, RobotRaconteurNode } from "robotraconteur";
@@ -69,7 +69,7 @@ Type definitions are included. Values from a service are typed `unknown`, since 
 
 ## In Node.js
 
-Node.js 22 or newer has the `WebSocket` class the transport uses, so the same code works there. For `rr+tcp`, TLS (`rrs+tcp`), discovery, and services, add the [robotraconteur-node](https://github.com/johnwason/robotraconteur_typescript_node) package. From the repository folder:
+Node.js 22 or newer has the `WebSocket` class the transport uses, so the same code works there after `npm install robotraconteur`. For `rr+tcp`, TLS (`rrs+tcp`), discovery, and services, add the [robotraconteur-node](https://github.com/robotraconteur/robotraconteur_typescript_node) package. To run the example from the repository folder:
 
 ```
 npm install
