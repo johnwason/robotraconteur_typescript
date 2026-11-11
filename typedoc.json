@@ -1,0 +1,21 @@
+{
+    "$schema": "https://typedoc.org/schema.json",
+    "entryPoints": [
+        "src/index.ts",
+        "src/ServiceDefinitionValidators.ts"
+    ],
+    "out": "docs-site",
+    "name": "Robot Raconteur TypeScript",
+    "excludePrivate": true,
+    "excludeInternal": true,
+    "validation": {
+        "notExported": true,
+        "invalidLink": true,
+        "notDocumented": true
+    },
+    "excludeProtected": true,
+    "intentionallyNotExported": [
+        "StreamTransportParent",
+        "Message"
+    ]
+}

@@ -19,12 +19,16 @@ import { MemberDefinition, TypeDefinition } from "./ServiceDefinition.js";
 
 const TIMESPEC = "RobotRaconteur.TimeSpec";
 
+/** A timestamp as Robot Raconteur sends it: seconds and nanoseconds since the Unix epoch */
 export interface TimeSpec
 {
+    /** Seconds since the Unix epoch */
     seconds: bigint;
+    /** Nanoseconds within the second, from 0 to 999999999 */
     nanoseconds: number;
 }
 
+/** Which way a wire or pipe carries values, as seen by this client. Set with the readonly and writeonly modifiers in the service definition */
 export type MemberDirection = "both" | "readonly" | "writeonly";
 
 /** What wire and pipe handles need from the object that owns them */
@@ -84,9 +88,12 @@ export function unpackWirePacket(ctx: MemberContext, type: TypeDefinition, eleme
     };
 }
 
+/** A value received on a wire, with the time the sender gave it */
 export interface WireValue
 {
+    /** The value, unpacked as the wire's type */
     value: unknown;
+    /** When the sender sent the value, by its own clock */
     timestamp: TimeSpec;
 }
 
@@ -123,17 +130,25 @@ export class Waiters
     }
 }
 
+/** Called with the connection, the new value, and its timestamp. It may return a promise */
 export type WireValueChangedHandler = (handle: WireHandle, value: unknown, timestamp: TimeSpec) => unknown;
+/** Called when a wire connection ends other than by closing it */
 export type WireClosedHandler = (handle: WireHandle) => unknown;
 
 /** A streaming connection to a wire member. Use the wire functions of ServiceStub with it */
 export class WireHandle
 {
+    /** True once the connection has closed */
     closed = false;
+    /** Milliseconds a received value stays valid, or -1 for it not to expire */
     inValueLifespan = -1;
+    /** Milliseconds a sent value stays valid, or -1 for it not to expire */
     outValueLifespan = -1;
+    /** Ignore values from the service */
     ignoreInValue = false;
+    /** Called if the connection ends other than by closing it */
     closeCallback: WireClosedHandler | null = null;
+    /** Functions called with each new value */
     readonly listeners = new Set<WireValueChangedHandler>();
 
     private in_value: WireValue | null = null;
@@ -144,6 +159,12 @@ export class WireHandle
     private in_waiters = new Waiters();
     private out_waiters = new Waiters();
 
+    /**
+     * @internal Created by ServiceStub.connectWire
+     *
+     * @param memberName The wire member
+     * @param direction Whether the wire is readonly or writeonly from this client
+     */
     constructor(private ctx: MemberContext, readonly memberName: string, private type: TypeDefinition, readonly direction: MemberDirection, private on_closed: (h: WireHandle) => void) {}
 
     private expired(local: number, lifespan: number): boolean
@@ -151,11 +172,13 @@ export class WireHandle
         return lifespan >= 0 && Date.now() - local > lifespan;
     }
 
+    /** Whether a value has been received and has not expired */
     get inValueValid(): boolean
     {
         return this.in_value !== null && !this.expired(this.in_local, this.inValueLifespan);
     }
 
+    /** Whether a value has been sent and has not expired */
     get outValueValid(): boolean
     {
         return this.out_value !== null && !this.expired(this.out_local, this.outValueLifespan);
@@ -171,6 +194,7 @@ export class WireHandle
         if (this.direction === "readonly") throw memberError(MessageErrorType.ReadOnlyMember, "ReadOnlyMember", "Read only member");
     }
 
+    /** The last value received. Throws ValueNotSet if none has been received or it has expired */
     getInValue(): WireValue
     {
         this.checkRead();
@@ -178,12 +202,14 @@ export class WireHandle
         return this.in_value!;
     }
 
+    /** The last value received, or null if none has been received or it has expired */
     tryGetInValue(): WireValue | null
     {
         this.checkRead();
         return this.inValueValid ? this.in_value : null;
     }
 
+    /** The last value sent. Throws ValueNotSet if none has been sent or it has expired */
     getOutValue(): WireValue
     {
         this.checkWrite();
@@ -191,12 +217,14 @@ export class WireHandle
         return this.out_value!;
     }
 
+    /** The last value sent, or null if none has been sent or it has expired */
     tryGetOutValue(): WireValue | null
     {
         this.checkWrite();
         return this.outValueValid ? this.out_value : null;
     }
 
+    /** Send a value. Only the latest value matters on a wire, so values are not queued behind each other */
     setOutValue(value: unknown): void
     {
         this.checkWrite();
@@ -228,6 +256,7 @@ export class WireHandle
         return this.inValueValid;
     }
 
+    /** Wait until a value has been sent, for up to timeout milliseconds or indefinitely if negative. Resolves with whether it is valid */
     async waitOutValueValid(timeout: number): Promise<boolean>
     {
         this.checkWrite();
@@ -235,6 +264,7 @@ export class WireHandle
         return this.outValueValid;
     }
 
+    /** @internal Called by the stub when a value arrives */
     packetReceived(m: MessageEntry): void
     {
         if (this.ignoreInValue || this.direction === "writeonly") return;
@@ -284,6 +314,7 @@ export class WireHandle
         }
     }
 
+    /** Close the connection. The close callback is not called */
     async close(): Promise<void>
     {
         if (this.closed) return;

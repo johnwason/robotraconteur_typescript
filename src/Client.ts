@@ -21,7 +21,7 @@ import { entryToError, errorToEntry } from "./MessageError.js";
 import { packElement, TypeContext, unpackElement } from "./Pack.js";
 import { EntryDefinition, MemberDefinition, MemberKind, parseServiceDefinition, ServiceDefinition, TypeDefinition } from "./ServiceDefinition.js";
 import { ITransportConnection, parseConnectionUrl, Transport } from "./Transport.js";
-import { PipeAckHandler, PipeClosedHandler, PipeHandle, PipePacketHandler } from "./PipeMember.js";
+import { PipeAckHandler, PipeClosedHandler, PipeHandle, PipePacketHandler, PipePacketValue } from "./PipeMember.js";
 import { MemberContext, MemberDirection, memberDirection, packWirePacket, timeNow, unpackWirePacket, WireClosedHandler, WireHandle, WireValue, WireValueChangedHandler } from "./WireMember.js";
 
 const VARVALUE_MAP: TypeDefinition = { type: "varvalue", container: "map_string" };
@@ -33,7 +33,9 @@ interface PendingRequest
     timer: ReturnType<typeof setTimeout>;
 }
 
+/** Called with the parameters of an event. It may return a promise */
 export type EventHandler = (...args: any[]) => unknown;
+/** Called with the parameters of a callback. Its return value, or the value of the promise it returns, is sent to the service */
 export type CallbackHandler = (...args: any[]) => unknown;
 
 /**
@@ -42,8 +44,18 @@ export type CallbackHandler = (...args: any[]) => unknown;
  */
 export class GeneratorHandle<T = unknown> implements AsyncIterable<T, void, unknown>
 {
+    /**
+     * Generators are returned by ServiceStub.callFunction and callGenerator, rather than made directly.
+     *
+     * @param memberName The generator function
+     * @param index The index the service gave the generator, which identifies it in requests
+     * @param returnType The type of the values it produces, if it produces any
+     * @param paramType The type of the value passed to each step, if the function takes a generator parameter
+     * @param stub The object the function belongs to, which for await uses
+     */
     constructor(readonly memberName: string, readonly index: number, readonly returnType: TypeDefinition | undefined, readonly paramType: TypeDefinition | undefined, private stub?: ServiceStub) {}
 
+    /** Iterate the values with for await. Leaving the loop early closes the generator */
     [Symbol.asyncIterator](): AsyncIterator<T, void, unknown>
     {
         const stub = this.stub!;
@@ -134,6 +146,13 @@ export class ServiceStub
         }
     };
 
+    /**
+     * Stubs are returned by RobotRaconteurNode.connectService and getObjRef, rather than made directly.
+     *
+     * @param context The connection to the service
+     * @param servicePath The path of the object in the service, such as `service.child[2]`
+     * @param objectType The qualified type of the object, such as `experimental.reynard.Reynard`
+     */
     constructor(readonly context: ClientContext, readonly servicePath: string, readonly objectType: string) {}
 
     private member(name: string, kind: MemberKind): MemberDefinition
@@ -168,6 +187,7 @@ export class ServiceStub
         return this.context.processRequest(m);
     }
 
+    /** Read a property. Throws a RobotRaconteurError from the service, such as for a write only property */
     async getProperty(name: string): Promise<unknown>
     {
         const m = this.member(name, "property");
@@ -175,6 +195,7 @@ export class ServiceStub
         return this.unpack(getElement(ret.elements, "value"), m.type!);
     }
 
+    /** Write a property. The value is packed as the property's type, so plain arrays and numbers can be used for typed arrays and integers */
     async setProperty(name: string, value: unknown): Promise<void>
     {
         const m = this.member(name, "property");
@@ -250,11 +271,13 @@ export class ServiceStub
         return this.unpack(getElement(ret.elements, "return"), handle.returnType);
     }
 
+    /** Tell the service the generator is no longer needed. Later steps fail with StopIteration */
     async callFunctionGenClose(handle: GeneratorHandle): Promise<void>
     {
         await this.generatorRequest(handle, MessageErrorType.StopIteration, "StopIteration");
     }
 
+    /** Abort the generator, as an error rather than a normal end. Later steps fail with OperationAborted */
     async callFunctionGenAbort(handle: GeneratorHandle): Promise<void>
     {
         await this.generatorRequest(handle, MessageErrorType.AbortOperation, "AbortOperation");
@@ -284,6 +307,7 @@ export class ServiceStub
         listeners.add(handler);
     }
 
+    /** Stop calling a handler added with addEventListener */
     removeEventListener(name: string, handler: EventHandler): void
     {
         this.member(name, "event");
@@ -312,6 +336,7 @@ export class ServiceStub
         console.error(`Error in handler for event "${name}" of ${this.servicePath}:`, e);
     }
 
+    /** @internal Called by the connection when the service sends an event */
     dispatchEvent(e: MessageEntry): void
     {
         const listeners = this.event_listeners.get(e.memberName);
@@ -344,7 +369,7 @@ export class ServiceStub
         }
     }
 
-    /** Run a callback requested by the service and return the response */
+    /** @internal Run a callback requested by the service and return the response */
     async callbackCall(e: MessageEntry): Promise<MessageEntry>
     {
         const r = new MessageEntry(MessageEntryType.CallbackCallRet, e.memberName);
@@ -375,22 +400,26 @@ export class ServiceStub
         return unpackWirePacket(this.member_context, m.type!, ret.elements);
     }
 
+    /** Read the wire's current value from the service, without connecting the wire */
     peekWireInValue(name: string): Promise<WireValue>
     {
         return this.peek(MessageEntryType.WirePeekInValueReq, name);
     }
 
+    /** Read the value last sent to the service on the wire, without connecting the wire */
     peekWireOutValue(name: string): Promise<WireValue>
     {
         return this.peek(MessageEntryType.WirePeekOutValueReq, name);
     }
 
+    /** Send the service a value on the wire, without connecting the wire */
     async pokeWireOutValue(name: string, value: unknown): Promise<void>
     {
         const m = this.member(name, "wire");
         await this.request(MessageEntryType.WirePokeOutValueReq, name, packWirePacket(this.member_context, m.type!, value, timeNow()));
     }
 
+    /** Whether the wire is readonly or writeonly from this client, or both */
     getWireDirection(name: string): MemberDirection
     {
         return memberDirection(this.member(name, "wire"));
@@ -420,6 +449,7 @@ export class ServiceStub
         return h;
     }
 
+    /** Close a wire connection. Its close callback is not called */
     closeWire(handle: WireHandle): Promise<void>
     {
         return handle.close();
@@ -443,21 +473,25 @@ export class ServiceStub
         return handle.tryGetInValue();
     }
 
+    /** The value last sent on the connection. Throws ValueNotSet if none has been sent or it has expired */
     getWireOutValue(handle: WireHandle): WireValue
     {
         return handle.getOutValue();
     }
 
+    /** The value last sent on the connection, or null if none has been sent or it has expired */
     tryGetWireOutValue(handle: WireHandle): WireValue | null
     {
         return handle.tryGetOutValue();
     }
 
+    /** Whether a value has been received on the connection and has not expired */
     isWireInValueValid(handle: WireHandle): boolean
     {
         return handle.inValueValid;
     }
 
+    /** Whether a value has been sent on the connection and has not expired */
     isWireOutValueValid(handle: WireHandle): boolean
     {
         return handle.outValueValid;
@@ -469,6 +503,7 @@ export class ServiceStub
         return handle.waitInValueValid(timeout);
     }
 
+    /** Wait until a value has been sent, for up to timeout milliseconds or indefinitely if negative. Resolves with whether the value is valid */
     waitWireOutValueValid(handle: WireHandle, timeout = -1): Promise<boolean>
     {
         return handle.waitOutValueValid(timeout);
@@ -480,36 +515,43 @@ export class ServiceStub
         handle.inValueLifespan = milliseconds;
     }
 
+    /** Milliseconds a received value stays valid, or -1 if it does not expire */
     getWireInValueLifespan(handle: WireHandle): number
     {
         return handle.inValueLifespan;
     }
 
+    /** Milliseconds a sent value stays valid for getWireOutValue, or -1 for it not to expire */
     setWireOutValueLifespan(handle: WireHandle, milliseconds: number): void
     {
         handle.outValueLifespan = milliseconds;
     }
 
+    /** Milliseconds a sent value stays valid, or -1 if it does not expire */
     getWireOutValueLifespan(handle: WireHandle): number
     {
         return handle.outValueLifespan;
     }
 
+    /** Ignore values from the service, for a connection only used to send */
     setWireIgnoreInValue(handle: WireHandle, ignore: boolean): void
     {
         handle.ignoreInValue = ignore;
     }
 
+    /** Whether values from the service are ignored */
     getWireIgnoreInValue(handle: WireHandle): boolean
     {
         return handle.ignoreInValue;
     }
 
+    /** Call a function each time a new value arrives on the connection */
     addWireValueChangedListener(handle: WireHandle, listener: WireValueChangedHandler): void
     {
         handle.listeners.add(listener);
     }
 
+    /** Stop calling a function added with addWireValueChangedListener */
     removeWireValueChangedListener(handle: WireHandle, listener: WireValueChangedHandler): void
     {
         handle.listeners.delete(listener);
@@ -521,11 +563,13 @@ export class ServiceStub
         handle.closeCallback = callback;
     }
 
+    /** Whether the pipe is readonly or writeonly from this client, or both */
     getPipeDirection(name: string): MemberDirection
     {
         return memberDirection(this.member(name, "pipe"));
     }
 
+    /** Whether the pipe is marked unreliable, so packets may be lost or arrive out of order */
     isPipeUnreliable(name: string): boolean
     {
         return this.member(name, "pipe").modifiers?.includes("unreliable") ?? false;
@@ -580,6 +624,7 @@ export class ServiceStub
         }
     }
 
+    /** Close a pipe endpoint. Its close callback is not called */
     closePipe(handle: PipeHandle): Promise<void>
     {
         return handle.close();
@@ -609,22 +654,25 @@ export class ServiceStub
         return handle.peekPacket();
     }
 
+    /** Wait up to timeout milliseconds for a packet, or indefinitely if negative, and read it without removing it */
     peekPipePacketWait(handle: PipeHandle, timeout = -1): Promise<unknown>
     {
         return handle.receivePacketWait(timeout, true);
     }
 
     /** Resolves with `{ value }`, or null instead of throwing if no packet arrives in time */
-    tryReceivePipePacketWait(handle: PipeHandle, timeout = -1, peek = false): Promise<{ value: unknown } | null>
+    tryReceivePipePacketWait(handle: PipeHandle, timeout = -1, peek = false): Promise<PipePacketValue | null>
     {
         return handle.tryReceivePacketWait(timeout, peek);
     }
 
+    /** The number of packets waiting to be received */
     getPipePacketsAvailable(handle: PipeHandle): number
     {
         return handle.available;
     }
 
+    /** The index of the endpoint, which the service chose if -1 was given to connectPipe */
     getPipeIndex(handle: PipeHandle): number
     {
         return handle.index;
@@ -636,16 +684,19 @@ export class ServiceStub
         handle.requestPacketAck = request;
     }
 
+    /** Whether the peer is asked to acknowledge packets */
     getPipeRequestPacketAck(handle: PipeHandle): boolean
     {
         return handle.requestPacketAck;
     }
 
+    /** Drop packets from the service, for an endpoint only used to send */
     setPipeIgnoreInValue(handle: PipeHandle, ignore: boolean): void
     {
         handle.ignoreInValue = ignore;
     }
 
+    /** Whether packets from the service are dropped */
     getPipeIgnoreInValue(handle: PipeHandle): boolean
     {
         return handle.ignoreInValue;
@@ -657,26 +708,31 @@ export class ServiceStub
         handle.maxReceiveQueue = packets;
     }
 
+    /** The number of waiting packets above which the endpoint closes, or zero for no limit */
     getPipeMaxReceiveQueue(handle: PipeHandle): number
     {
         return handle.maxReceiveQueue;
     }
 
+    /** Call a function each time a packet arrives. It is given the endpoint, and receives the packets itself */
     addPipePacketReceivedListener(handle: PipeHandle, listener: PipePacketHandler): void
     {
         handle.packetListeners.add(listener);
     }
 
+    /** Stop calling a function added with addPipePacketReceivedListener */
     removePipePacketReceivedListener(handle: PipeHandle, listener: PipePacketHandler): void
     {
         handle.packetListeners.delete(listener);
     }
 
+    /** Call a function with the packet number each time the service acknowledges a packet */
     addPipePacketAckListener(handle: PipeHandle, listener: PipeAckHandler): void
     {
         handle.ackListeners.add(listener);
     }
 
+    /** Stop calling a function added with addPipePacketAckListener */
     removePipePacketAckListener(handle: PipeHandle, listener: PipeAckHandler): void
     {
         handle.ackListeners.delete(listener);
@@ -688,6 +744,7 @@ export class ServiceStub
         handle.closeCallback = callback;
     }
 
+    /** @internal Called by the connection for wire packets and closes */
     dispatchWire(e: MessageEntry): void
     {
         const h = this.wires.get(e.memberName);
@@ -727,6 +784,7 @@ export class ServiceStub
         return h;
     }
 
+    /** @internal Called by the connection for pipe packets, acknowledgements, and closes */
     dispatchPipe(e: MessageEntry): void
     {
         try
@@ -750,7 +808,7 @@ export class ServiceStub
         }
     }
 
-    /** The object or connection is gone, so close everything streaming through it */
+    /** @internal The object or connection is gone, so close everything streaming through it */
     closeMembers(): void
     {
         for (const h of [...this.wires.values()]) h.remoteClosed();
@@ -764,14 +822,21 @@ export class ServiceStub
 /** Client side of a connection to one service */
 export class ClientContext
 {
+    /** The endpoint number of this client in the node */
     localEndpoint = 0;
+    /** The endpoint number the service gave this client */
     remoteEndpoint = 0;
+    /** The node ID of the service's node */
     remoteNodeID = NodeID.Any;
+    /** The name of the service's node */
     remoteNodeName = "";
+    /** The name of the service */
     serviceName = "";
+    /** True while the connection is open */
     connected = false;
     /** Attributes reported by the service */
     attributes = new Map<string, unknown>();
+    /** @internal The service definitions this connection knows, for packing values */
     readonly types: TypeContext;
 
     private transport: ITransportConnection | null = null;
@@ -792,11 +857,13 @@ export class ClientContext
     private closing = false;
     private close_listeners = new Set<() => void>();
 
+    /** @param node The node the connection belongs to */
     constructor(readonly node: RobotRaconteurNode)
     {
         this.types = new TypeContext(new Map(node.serviceTypes));
     }
 
+    /** @internal Connect to a service. Use RobotRaconteurNode.connectService instead */
     async connectService(transport: Transport, url: string, username?: string, credentials?: Map<string, unknown> | Record<string, unknown>, object_type?: string): Promise<ServiceStub>
     {
         const u = parseConnectionUrl(url);
@@ -939,7 +1006,7 @@ export class ClientContext
         }
     }
 
-    /** Check that an object type implements another, following implements statements */
+    /** @internal Check that an object type implements another, following implements statements */
     verifyObjectImplements(object_type: string, implements_type: string): void
     {
         const check = (t: string, seen: Set<string>): boolean =>
@@ -956,6 +1023,7 @@ export class ClientContext
         if (!check(object_type, new Set())) throw error(MessageErrorType.ObjectNotFound, "ServiceError", "Invalid object type");
     }
 
+    /** The service definition of a qualified object type. Throws if the connection does not have it */
     serviceDefForType(object_type: string): ServiceDefinition
     {
         const d = this.types.defs.get(object_type.substring(0, object_type.lastIndexOf(".")));
@@ -971,6 +1039,7 @@ export class ClientContext
         return o;
     }
 
+    /** The definition of a member of an object type, or undefined if it has none by that name */
     findMember(object_type: string, name: string): MemberDefinition | undefined
     {
         let m = this.members.get(object_type);
@@ -982,6 +1051,7 @@ export class ClientContext
         return m.get(name);
     }
 
+    /** @internal The stub for an object path, asking the service for its type the first time */
     async findObjRef(path: string): Promise<ServiceStub>
     {
         const existing = this.stubs.get(path);
@@ -1004,6 +1074,7 @@ export class ClientContext
         return stub;
     }
 
+    /** @internal Send a request and wait for its response, rejecting if it reports an error */
     processRequest(m: MessageEntry): Promise<MessageEntry>
     {
         return new Promise<MessageEntry>((resolve, reject) =>
@@ -1041,18 +1112,19 @@ export class ClientContext
         return entryToError(e, this.types);
     }
 
-    /** Fill in a response entry for a failure in application code */
+    /** @internal Fill in a response entry for a failure in application code */
     errorToEntry(err: unknown, entry: MessageEntry): void
     {
         errorToEntry(err, entry, this.types);
     }
 
+    /** @internal Send an entry to the service without waiting for a response */
     sendEntry(e: MessageEntry): void
     {
         this.transportOrThrow().sendMessage(this.newMessage(e));
     }
 
-    /** Resolves once the entry has been handed to the network */
+    /** @internal Resolves once the entry has been handed to the network */
     sendEntryWait(e: MessageEntry): Promise<void>
     {
         return this.transportOrThrow().sendMessageWait(this.newMessage(e));
@@ -1085,6 +1157,7 @@ export class ClientContext
         return m;
     }
 
+    /** @internal Called by the node for messages addressed to this client */
     messageReceived(m: Message): void
     {
         this.last_received = Date.now();
@@ -1209,6 +1282,7 @@ export class ClientContext
         }
     }
 
+    /** @internal Called by the transport when the connection ends */
     transportConnectionClosed(): void
     {
         this.shutdownConnection();
@@ -1253,6 +1327,7 @@ export class ClientContext
         this.close_listeners.add(listener);
     }
 
+    /** Stop calling a function added with addCloseListener */
     removeCloseListener(listener: () => void): void
     {
         this.close_listeners.delete(listener);

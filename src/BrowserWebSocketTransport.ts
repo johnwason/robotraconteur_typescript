@@ -166,7 +166,9 @@ export class BrowserWebSocketTransport implements Transport, StreamTransportPare
     heartbeatPeriod = 5000;
     /** Connection is closed if the remote node has not been heard from for this long in milliseconds */
     defaultReceiveTimeout = 15000;
+    /** Milliseconds to wait for a WebSocket to open */
     defaultConnectTimeout = 2500;
+    /** The largest message to send or receive, in bytes. 12 MB, as Core */
     maxMessageSize = 12 * 1024 * 1024;
     /** Use WebSocketStream where the browser provides it. If false, always use WebSocket */
     useWebSocketStream = true;
@@ -177,13 +179,16 @@ export class BrowserWebSocketTransport implements Transport, StreamTransportPare
 
     private connections = new Set<StreamConnection>();
 
+    /** @param node The node the transport belongs to. Register the transport with it too */
     constructor(public node: RobotRaconteurNode) {}
 
+    /** True for rr+ws and rr+wss URLs */
     canConnectService(url: string): boolean
     {
         return ["tcp", "rr+tcp", "rr+ws", "rr+wss"].includes(parseConnectionUrl(url).scheme);
     }
 
+    /** @internal Open a WebSocket to the URL and create the connection. Used by the node */
     async createTransportConnection(url: string, endpoint: Endpoint): Promise<ITransportConnection>
     {
         const u = parseConnectionUrl(url);
@@ -199,11 +204,13 @@ export class BrowserWebSocketTransport implements Transport, StreamTransportPare
         return c;
     }
 
+    /** Close every connection */
     close(): void
     {
         for (const c of [...this.connections]) c.close();
     }
 
+    /** @internal Called when a connection closes */
     removeConnection(c: StreamConnection): void
     {
         this.connections.delete(c);

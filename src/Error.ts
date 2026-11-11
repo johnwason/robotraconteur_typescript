@@ -21,9 +21,13 @@ import type { VarValue } from "./Pack.js";
  */
 export class RobotRaconteurError extends Error
 {
+    /** The MessageErrorType code, such as 17 for InvalidOperation or 100 for RemoteError */
     errorCode: number;
+    /** The qualified name of the error, such as RobotRaconteur.InvalidOperation */
     errorName: string;
+    /** A further name chosen by the service, to tell errors with the same errorName apart */
     errorSubName?: string;
+    /** A value with more information, chosen by the service */
     errorParam?: VarValue | null;
 
     constructor(errorCode: number, errorName: string, message: string)

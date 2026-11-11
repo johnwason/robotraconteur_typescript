@@ -17,14 +17,22 @@ import { Message } from "./Message.js";
 import { NodeID } from "./NodeID.js";
 import { MessageErrorType } from "./DataTypes.js";
 
+/** The parts of a Robot Raconteur URL, from parseConnectionUrl */
 export interface ParsedConnectionUrl
 {
+    /** The scheme, such as rr+ws or rr+tcp */
     scheme: string;
+    /** The host name or address, with IPv6 addresses in brackets */
     host: string;
+    /** The port, or the default port of the scheme if the URL has none, such as 48653 for rr+tcp or 443 for rr+wss */
     port: number;
+    /** The path, such as / or /robotraconteur */
     path: string;
+    /** The nodeid parameter, or NodeID.Any */
     nodeid: NodeID;
+    /** The nodename parameter, or empty */
     nodename: string;
+    /** The service parameter, or empty */
     service: string;
 }
 
@@ -72,28 +80,40 @@ export function parseConnectionUrl(url: string): ParsedConnectionUrl
 }
 
 /** One end of a client or service session, identified by a number unique within the node */
+/** Something messages are routed to, such as a client. Needed only to write a transport */
 export interface Endpoint
 {
+    /** The endpoint number the node assigned */
     localEndpoint: number;
+    /** A message addressed to this endpoint arrived */
     messageReceived(m: Message): void;
+    /** The transport connection the endpoint uses has closed */
     transportConnectionClosed(): void;
 }
 
 /** A connected transport stream used by one client */
+/** A connection to another node made by a transport. Needed only to write a transport */
 export interface ITransportConnection
 {
+    /** The node at the other end, once known */
     readonly remoteNodeID: NodeID;
     /** True if the transport negotiated the ConnectClientCombined operation */
     readonly useCombinedConnection: boolean;
+    /** Queue a message to send. Throws if the connection has closed */
     sendMessage(m: Message): void;
     /** Resolves once the message has been handed to the network */
     sendMessageWait(m: Message): Promise<void>;
+    /** Close the connection. Its endpoints are told */
     close(): void;
 }
 
+/** A way to connect to other nodes, such as BrowserWebSocketTransport. Register one with the node */
 export interface Transport
 {
+    /** Whether the transport handles the URL's scheme */
     canConnectService(url: string): boolean;
+    /** Connect to the node at a URL for an endpoint */
     createTransportConnection(url: string, endpoint: Endpoint): Promise<ITransportConnection>;
+    /** Close every connection. Called when the node shuts down */
     close(): void;
 }

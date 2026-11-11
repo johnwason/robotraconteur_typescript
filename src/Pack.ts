@@ -23,12 +23,20 @@ import { EntryDefinition, parseTypeDefinition, ServiceDefinition, TypeDefinition
 /** A value together with its Robot Raconteur type, used for varvalue */
 export class VarValue
 {
+    /**
+     * @param value The value, in the form the type is packed from, such as Float64Array for double[]
+     * @param type The Robot Raconteur type as written in a service definition, such as `double[]` or
+     * `experimental.reynard.ReynardState`
+     */
     constructor(public value: unknown, public type: string) {}
 }
 
+/** A multidimensional array, as used for `[*]` and fixed size `[m,n]` types */
 export interface MultiDimArray
 {
+    /** The size of each dimension */
     dims: Uint32Array;
+    /** The elements in column major order, as Core stores them. A typed array for numeric types */
     array: unknown;
 }
 

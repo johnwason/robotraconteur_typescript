@@ -17,6 +17,7 @@ import { EntryDefinition, MemberDefinition, readLines, ServiceDefinition, TypeDe
 // Semantic checks for parsed service definitions. Imported separately through
 // "robotraconteur/validators" so applications that trust their definitions do not bundle this.
 
+/** A service definition is not valid, for example because a type it uses is not defined */
 export class ServiceDefinitionVerifyError extends Error
 {
     constructor(message: string)
