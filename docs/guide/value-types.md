@@ -55,7 +55,7 @@ node.decodeOptions = { viewTypes: ["com.robotraconteur.pointcloud.PointCloudPoin
 node.decodeOptions = { namedArrays: "view" };
 ```
 
-The options can also be set for one connection with `client.context.decodeOptions`, or for the clients of a subscription with the `decodeOptions` subscription option. Single named arrays, such as one `Pose`, are always objects.
+The options can also be set for one connection with `client.context.decodeOptions`, or for the clients of a subscription with the `decodeOptions` subscription option or `subscription.decodeOptions`. Single named arrays, such as one `Pose`, are always objects.
 
 Element `i` of a view starts at `view.array[i * view.stride]`, and `view.fieldOffset(name)` gives a field's position within an element. `view.get(i)` and `view.toObjects()` give objects when they are needed. The typed array belongs to the view, so it can be passed to WebGL, or transferred to a worker with `view.array.buffer`.
 

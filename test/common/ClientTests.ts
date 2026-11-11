@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { GeneratorHandle, parseTypeDefinition, RobotRaconteurError, RobotRaconteurNode, ServiceStub, TypeDefinition, VarValue } from "../../src/index.js";
+import { GeneratorHandle, NamedArrayView, newNamedArrayView, parseTypeDefinition, RobotRaconteurError, RobotRaconteurNode, ServiceStub, TypeDefinition, VarValue } from "../../src/index.js";
 import { primitivesByName } from "../../src/DataTypes.js";
 import { TypeContext } from "../../src/Pack.js";
 import { ServiceDefinition } from "../../src/ServiceDefinition.js";
@@ -21,6 +21,7 @@ import * as generated from "./ServiceTestClientGenerated.js";
 import * as client1 from "./ServiceTestClient.js";
 import * as client2 from "./ServiceTestClient2.js";
 import * as client3 from "./ServiceTestClient3.js";
+import * as st2 from "./ServiceTest2.js";
 
 // Replays the operations recorded from the Core Python test client, and the remaining client tests
 // from Core and RobotRaconteurWeb that apply to the implemented members. Runs in Node and browsers.
@@ -324,6 +325,38 @@ export function clientTests(node: RobotRaconteurNode, port: number, vectors: Vec
     add("ServiceTestClient2 TestGeneratorIteration", withClient(S2, client2.TestGeneratorIteration));
     add("ServiceTestClient2 TestConstants", withClient(S2, client2.TestConstants));
     add("ServiceTestClient2 TestNamedArrays", withClient(S2, client2.TestNamedArrays));
+    add("arrays of named arrays as views", withClient(S2, async (r) =>
+    {
+        const transform = "com.robotraconteur.testing.TestService3.transform";
+        r.context.decodeOptions = { viewTypes: [transform] };
+        try
+        {
+            // Views are sent in place of arrays of objects
+            const items = st2.ServiceTest2_create_transform_array(6, 19274);
+            const v = newNamedArrayView(r, transform, items.length);
+            items.forEach((x, i) => v.set(i, x));
+            await r.setProperty("testnamedarray3", v);
+
+            const got = await r.getProperty("testnamedarray3");
+            assert.ok(got instanceof NamedArrayView);
+            assert.equal(got.typeName, transform);
+            assert.equal(got.stride, 7);
+            st2.ServiceTest2_verify_transform_array(got.toObjects(), 8, 837512);
+
+            await r.setProperty("testnamedarray4", st2.ServiceTest2_create_transform_multidimarray(5, 2, 6385));
+            const md = (await r.getProperty("testnamedarray4")) as { dims: Uint32Array; array: unknown };
+            assert.ok(md.array instanceof NamedArrayView);
+            st2.ServiceTest2_verify_transform_multidimarray({ dims: md.dims, array: md.array.toObjects() }, 7, 2, 66134);
+
+            // A single named array is always an object
+            assert.ok(!((await r.getProperty("testnamedarray2")) instanceof NamedArrayView));
+        }
+        finally
+        {
+            r.context.decodeOptions = undefined;
+        }
+        assert.ok(Array.isArray(await r.getProperty("testnamedarray3")));
+    }));
     add("ServiceTestClient2 TestComplex", withClient(S2, generated.TestComplex));
     add("ServiceTestClient2 TestNoLock", withClient(S2, client2.TestNoLock));
     add("ServiceTestClient2 TestBools", withClient(S2, generated.TestBools));

@@ -152,6 +152,22 @@ export class ServiceSubscription
         node.addShutdownHook(this.shutdown_hook);
     }
 
+    /** How the connected clients decode received values. The node's decodeOptions if not set */
+    get decodeOptions(): DecodeOptions | undefined
+    {
+        return this.decode_options;
+    }
+
+    /** Set how the clients decode received values. Applies to the connected clients and later ones */
+    set decodeOptions(options: DecodeOptions | undefined)
+    {
+        this.decode_options = options;
+        for (const c of this.clients.values())
+        {
+            if (c.client) c.client.context.decodeOptions = options;
+        }
+    }
+
     /** Used by subscribeService */
     initServiceURL(urls: string[], username?: string, credentials?: Credentials, objectType?: string): void
     {
@@ -193,7 +209,7 @@ export class ServiceSubscription
             try
             {
                 stub = await this.node.connectService(c.urls, c.username, c.credentials, c.objectType);
-                if (this.decode_options) stub.context.decodeOptions = this.decode_options;
+                stub.context.decodeOptions = this.decode_options;
             }
             catch (e)
             {
