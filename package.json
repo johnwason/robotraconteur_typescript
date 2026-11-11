@@ -6,7 +6,7 @@
     "author": "Wason Technology, LLC",
     "repository": {
         "type": "git",
-        "url": "https://github.com/robotraconteur/robotraconteur_typescript.git"
+        "url": "git+https://github.com/robotraconteur/robotraconteur_typescript.git"
     },
     "homepage": "https://robotraconteur.github.io/robotraconteur_typescript/",
     "bugs": "https://github.com/robotraconteur/robotraconteur_typescript/issues",
