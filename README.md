@@ -4,7 +4,7 @@
 
 A small, dependency-free TypeScript client for [Robot Raconteur](https://github.com/robotraconteur/robotraconteur) that runs in the browser and communicates over WebSockets.
 
-**Status:** experimental. This is a minimal client. It does not yet cover the full Robot Raconteur feature set.
+**Status:** experimental. The client covers properties, functions, generators, objects, events, callbacks, wires, pipes, and subscriptions. Memories and locks are not supported.
 
 ## Quick start
 
@@ -20,7 +20,21 @@ You only need a web browser and Python. No Node.js or TypeScript is required.
 2. Open `http://localhost:29201` in a browser to watch Reynard.
 3. Download this repository and double click [examples/reynard.html](examples/reynard.html). Press **Connect**, then try the other buttons. Type a message in Reynard's chat box and it appears on your page through an event.
 
-## Using the library in a web page
+## Documentation
+
+The [documentation](https://johnwason.github.io/robotraconteur_typescript/) has a guide and an API reference. The guide pages are also in this repository:
+
+- [Getting started](docs/guide/getting-started.md): in a web page, with a bundler, and in Node.js
+- [Using a service](docs/guide/using-services.md): properties, functions, generators, objects, events, and callbacks
+- [Wires and pipes](docs/guide/wires-and-pipes.md): streaming values and packets
+- [Staying connected](docs/guide/subscriptions.md): subscriptions that reconnect
+- [Value types](docs/guide/value-types.md): how Robot Raconteur types appear in JavaScript
+- [Service definitions](docs/guide/service-definitions.md): parsing and checking `.robdef` files
+- [Limits](docs/guide/limits.md): browser origins, flow control, bundle size, and what is not supported
+
+For `rr+tcp`, TLS, discovery, and writing services in Node.js, see [robotraconteur-node](https://github.com/johnwason/robotraconteur_typescript_node).
+
+## Example: a web page
 
 Copy [examples/robotraconteur.min.js](examples/robotraconteur.min.js) next to your HTML file and load it with a script tag. Everything is then available under the name `RobotRaconteur`.
 
@@ -32,7 +46,6 @@ Copy [examples/robotraconteur.min.js](examples/robotraconteur.min.js) next to yo
         node.registerTransport(new RobotRaconteur.BrowserWebSocketTransport(node));
 
         const reynard = await node.connectService("rr+ws://localhost:29200?service=reynard");
-
         await reynard.callFunction("say", ["Hello!"]);
         console.log(await reynard.getProperty("color"));
 
@@ -43,219 +56,7 @@ Copy [examples/robotraconteur.min.js](examples/robotraconteur.min.js) next to yo
 </script>
 ```
 
-Open the page by double clicking the file. If you put the page on a web server instead, see [Limitations](#limitations).
-
-The word `await` means "wait for the robot to answer", and it can only be used inside a function marked `async`.
-
-### What you can do with a connected robot
-
-| To do this | Write this |
-| --- | --- |
-| Read a property | `await robot.getProperty("name")` |
-| Set a property | `await robot.setProperty("name", value)` |
-| Call a function | `await robot.callFunction("name", [first, second])` |
-| Get a sub-object | `await robot.getObjRef("name")`, or `await robot.getObjRef("name", index)` |
-| Read a wire's latest value | `(await robot.peekWireInValue("name")).value` |
-| Read a wire's output value | `(await robot.peekWireOutValue("name")).value` |
-| Set a wire's output value | `await robot.pokeWireOutValue("name", value)` |
-| Start a generator | `const gen = await robot.callGenerator("name", [first])` |
-| Read every value of a generator | `for await (const value of gen) { ... }` |
-| Read from a generator one step at a time | `await robot.callFunctionGenNext(handle)` |
-| Finish or abort a generator | `await robot.callFunctionGenClose(handle)` or `await robot.callFunctionGenAbort(handle)` |
-| Stream a wire | `const wire = await robot.connectWire("name")` |
-| Connect a pipe | `const pipe = await robot.connectPipe("name")` |
-| Listen for an event | `robot.addEventListener("name", (first, second) => { ... })` |
-| Stop listening | `robot.removeEventListener("name", handler)` |
-| Let the service call your code | `robot.setCallback("name", (first, second) => result)` |
-| Create a structure with default values | `RobotRaconteur.newStructure(robot, "type.name")` |
-| Get constants and enums | `RobotRaconteur.getConstants(robot, "service.definition.name")` |
-
-The names come from the service definition of the robot. Plain arrays of numbers such as `[1, 0, 0]` can be used anywhere an array is expected.
-
-If a service requires a login, pass the user name and password when connecting:
-
-```js
-const credentials = new Map([["password", new RobotRaconteur.VarValue("secret", "string")]]);
-const robot = await node.connectService(url, "username", credentials);
-```
-
-### Streaming with wires and pipes
-
-A **wire** always holds the most recent value, and older values are discarded. Use one for things like joint positions or commands.
-
-```js
-const wire = await robot.connectWire("robot_state");
-
-// Called on every new value
-robot.addWireValueChangedListener(wire, (handle, value, timestamp) => {
-    console.log(value.joint_position);
-});
-
-// Or read the latest value whenever you need it
-if (await robot.waitWireInValueValid(wire, 1000)) {
-    console.log(robot.getWireInValue(wire).value);
-}
-
-// Send a value to the service, if the wire allows it
-robot.setWireOutValue(wire, value);
-
-await robot.closeWire(wire);
-```
-
-A **pipe** delivers every packet in order. Use one when no packet may be lost.
-
-```js
-const pipe = await robot.connectPipe("name");
-
-// Await each send so that you do not outrun the connection
-await robot.sendPipePacket(pipe, value);
-
-// Wait up to one second for the next packet
-const packet = await robot.receivePipePacketWait(pipe, 1000);
-
-await robot.closePipe(pipe);
-```
-
-Packets wait in a queue until you read them, up to 65536 packets by default (`setPipeMaxReceiveQueue`). If the queue overflows, the pipe closes rather than silently losing data. Packets are acknowledged when your code takes them, so services that use acknowledgements slow down to the rate you read.
-
-Other wire functions are `tryGetWireInValue`, `getWireOutValue`, `tryGetWireOutValue`, `isWireInValueValid`, `isWireOutValueValid`, `waitWireOutValueValid`, `setWireInValueLifespan`, `setWireOutValueLifespan`, `setWireIgnoreInValue`, `removeWireValueChangedListener`, `setWireCloseCallback`, and `getWireDirection`.
-
-Other pipe functions are `receivePipePacket`, `peekPipePacket`, `peekPipePacketWait`, `tryReceivePipePacketWait`, `getPipePacketsAvailable`, `setPipeRequestPacketAck`, `setPipeIgnoreInValue`, `addPipePacketReceivedListener`, `addPipePacketAckListener`, `setPipeCloseCallback`, `getPipeDirection`, and `isPipeUnreliable`. A pipe can have several endpoints, selected by passing an index to `connectPipe`.
-
-### Staying connected
-
-Networks fail and robots restart. A subscription connects to a service and reconnects whenever the connection is lost, including its wires and pipes. Use one for anything that should keep running:
-
-```js
-const subscription = RobotRaconteur.subscribeService(node, "rr+ws://localhost:29200?service=reynard");
-
-// A wire subscription always holds the most recent value from the service
-const state = subscription.subscribeWire("state");
-await state.waitInValueValid();
-console.log(state.getInValue().value.robot_position);
-
-subscription.addClientConnectListener(() => console.log("Connected"));
-subscription.addClientDisconnectListener(() => console.log("Connection lost"));
-
-// Ask for the client each time it is needed, because reconnecting replaces it
-const reynard = await subscription.getDefaultClientWait(5000);
-await reynard.callFunction("say", ["Hello!"]);
-
-subscription.close();
-```
-
-In a page loaded with `import`, `subscribeService` is a named export. Several URLs for one service can be passed as an array, as they can to `connectService`. As in Core, the preferred URL is tried first and each of the others 15 ms later, and the first to connect is used. `RobotRaconteurNode.selectRemoteNodeURL` gives the order: TLS (`rrs+tcp`) before plain TCP, each preferring loopback and then link-local addresses.
-
-| Object | Functions |
-| --- | --- |
-| Subscription | `getDefaultClient`, `tryGetDefaultClient`, `getDefaultClientWait(timeoutMs)`, `tryGetDefaultClientWait(timeoutMs)`, `getConnectedClients`, `subscribeWire(name, servicePath?)`, `subscribePipe(name, servicePath?, maxRecvPackets?, maxSendBacklog?)`, `subscribeSubObject(servicePath)`, `claimClient`, `releaseClient`, `getServiceURL`, `updateServiceURL`, `close`, `connectRetryDelay`, and add and remove functions for `ClientConnect`, `ClientDisconnect`, and `ClientConnectFailed` listeners |
-| Wire subscription | `getInValue`, `tryGetInValue`, `inValueValid`, `waitInValueValid(timeoutMs)`, `setOutValueAll(value)`, `inValueLifespan`, `ignoreInValue`, `activeConnectionCount`, `addWireValueChangedListener`, `removeWireValueChangedListener`, `close` |
-| Pipe subscription | `receivePacket`, `tryReceivePacket`, `tryReceivePacketWait(timeoutMs, peek?)`, `available`, `sendPacketAll(value)`, `ignoreReceived`, `activeConnectionCount`, `addPipePacketReceivedListener`, `removePipePacketReceivedListener`, `close` |
-| Sub object subscription | `getDefaultClient`, `tryGetDefaultClient`, `getDefaultClientWait(timeoutMs)`, `tryGetDefaultClientWait(timeoutMs)` |
-
-A `servicePath` such as `"*.arm"` names an object below the root object. A connection is retried every 2.5 seconds by default, and `connectRetryDelay` changes this.
-
-Wire values are the latest available, so nothing is lost by reconnecting. Pipe packets sent while disconnected are lost, and a pipe subscription keeps every packet until read unless `maxRecvPackets` is set, in which case the oldest packets are dropped. Finding services by type needs discovery, which is in the [robotraconteur-node](https://github.com/johnwason/robotraconteur_typescript_node) package.
-
-## Using the library from Node.js
-
-Node.js 22 or newer is required. From this repository folder, run:
-
-```
-npm install
-npm run build
-node examples/reynard.mjs
-```
-
-See [examples/reynard.mjs](examples/reynard.mjs). The code is the same as in a web page, except that the library is loaded with `import`.
-
-## Example: UR5e robot in the training simulator
-
-The [Robot Raconteur Training Simulator](https://github.com/robotraconteur-contrib/robotraconteur_training_sim) provides simulated articulated robots using the standard `com.robotraconteur.robotics.robot.Robot` type. See its documentation to install and start the UR5e scene. The first UR5e is at port 52511. In the Multi Robot scene that port is also a UR5e, and ports 52512 and 52513 are the ABB and Sawyer robots.
-
-This moves the first joint of the robot. The complete example, which also runs a trajectory using a generator, is [examples/ur5e.mjs](examples/ur5e.mjs).
-
-```js
-const robot = await node.connectService("rr+ws://localhost:52511?service=robot");
-
-// Change to jog mode. The robot must go through halt (0) to reach jog (1)
-await robot.setProperty("command_mode", 0);
-await new Promise((resolve) => setTimeout(resolve, 100));
-await robot.setProperty("command_mode", 1);
-
-// Read the current joint positions, then jog the first joint by 0.1 radians
-const state = (await robot.peekWireInValue("robot_state")).value;
-const target = Array.from(state.joint_position);
-target[0] = target[0] + 0.1;
-await robot.callFunction("jog_freespace", [target, [1, 1, 1, 1, 1, 1], true]);
-```
-
-## Reference
-
-TypeScript type definitions are included for those who want them. Parameters can also be passed by name, as in `robot.callFunction("add", { a: 1, b: 2 })`.
-
-### Value types
-
-| Robot Raconteur type | JavaScript value |
-| --- | --- |
-| `double`, `single`, 8 to 32 bit integers | `number` |
-| `int64`, `uint64` | `bigint` |
-| `bool` | `boolean` |
-| `cdouble`, `csingle` | `{ real, imag }` |
-| `string` | `string` |
-| Numeric arrays | Typed arrays such as `Float64Array`. `int64[]` uses `BigInt64Array` |
-| `bool[]` | `Uint8Array` |
-| Complex arrays | `Float64Array` or `Float32Array` with interleaved real and imaginary values |
-| Multidimensional arrays (`double[*]`) | `{ dims, array }` in column-major order |
-| `struct`, `pod`, `namedarray` | Plain objects with the declared field names |
-| Arrays of `pod` or `namedarray` | `Array` of plain objects |
-| `{list}` | `Array` |
-| `{int32}`, `{string}` | `Map` (plain objects are also accepted when sending `{string}`) |
-| `enum` | `number` |
-| `varvalue` | `VarValue(value, type)`, for example `new VarValue(new Int32Array([1]), "int32[]")` |
-
-Numeric data can be sent as the declared typed array, a plain array, or a typed array of another type. A scalar can also be given as a single element array. Anything else is converted only when every value fits the declared type exactly: fractional values for integer types, values out of range, `NaN` for integer types, non-numeric entries, and arrays where a scalar is expected are all rejected with a `RobotRaconteurError` rather than rounded, wrapped, or truncated. Sending a typed array of exactly the declared type does not copy or scan it, except for `bool[]`, whose `Uint8Array` values must be 0 or 1. Complex data can also be sent as an array of `{ real, imag }` objects or a plain number, which becomes a value with no imaginary part.
-
-Typed arrays and strings can be sent to a `varvalue` without a wrapper because their type is known. A plain array or number sent to a `varvalue` must use `VarValue` to state its type. Numeric values in a received `varvalue` are always arrays, since the message format does not distinguish scalars.
-
-### Errors
-
-Failures reject with a `RobotRaconteurError`, which has `errorName`, `errorCode`, `message`, and, when provided by the service, `errorSubName` and `errorParam`.
-
-### Service definition parser
-
-```ts
-import { parseServiceDefinition } from "robotraconteur";
-import { verifyServiceDefinition } from "robotraconteur/validators";
-
-const def = parseServiceDefinition(text);
-verifyServiceDefinition(def);
-```
-
-The result is plain JSON described by [service-definition.schema.json](service-definition.schema.json). Semantic verification is a separate entry point so that it is only bundled when used.
-
-## Bundle size
-
-| Bundle | Minified | Gzipped |
-| --- | --- | --- |
-| Client, as in `robotraconteur.min.js` | 78.0 KB | 22.5 KB |
-| Client without subscriptions, when bundled and unused | 63.8 KB | 19.0 KB |
-| Parser only | 7.2 KB | 2.7 KB |
-| Validators | 8.6 KB | 3.1 KB |
-
-Run `npm run size` to regenerate these numbers.
-
-## Flow control
-
-Sending never builds up an unbounded backlog of stale data: one message is sent at a time, and a newer wire packet replaces one still waiting, as in the other Robot Raconteur implementations. Where the browser provides `WebSocketStream`, currently Chromium based browsers, it is used to apply backpressure in both directions. Elsewhere, including Node.js, the library falls back to `WebSocket` and polls how much data is waiting to be sent. `WebSocket` cannot slow down incoming data, so with the fallback a page that cannot keep up will buffer received messages in the browser. Set `useWebSocketStream` to `false` on the transport to always use `WebSocket`.
-
-## Limitations
-
-* Client only, using Message Format Version 2. Message Version 4 is not offered during connection.
-* Only `rr+ws` and `rr+wss` connections through the WebSocket class. `tcp` and `rr+tcp` URLs are converted to WebSocket connections, matching RobotRaconteurWeb.
-* Memories, object locks, and `rrs+` end-to-end encryption are not implemented. Discovery is in the separate [robotraconteur-node](https://github.com/johnwason/robotraconteur_typescript_node) package.
-* Browsers send the origin of the page, and services must allow it. Pages loaded from `file://` and `robotraconteur.com` are allowed by default. Other origins, including `http://localhost`, must be added on the service with `AddWebSocketAllowedOrigin` or a command line option, for example `python -m reynard_the_robot --robotraconteur-tcp-ws-add-origins=http://localhost:8000`. Node.js clients do not send an origin.
-* Assumes a little-endian host, which covers browser platforms.
+[examples/ur5e.mjs](examples/ur5e.mjs) moves a simulated UR5e from the [Robot Raconteur Training Simulator](https://github.com/robotraconteur-contrib/robotraconteur_training_sim) with a generator.
 
 ## Development
 
@@ -267,7 +68,10 @@ Development and tests run in a container with Node.js, Chromium, and the Python 
 podman build -t rr-ts-dev .
 ./scripts/podman-run.sh npm test
 ./scripts/podman-run.sh sh -c "npm run build && npm run size"
+./scripts/podman-run.sh npm run docs
 ```
+
+`npm run docs` builds the documentation site into `docs-site`, from the guide in `docs/guide` and the doc comments in the source.
 
 The tests use the standard service definitions from the Core repository (`test/robdef`) and the Core Python test server, using the configuration from Core's own pytest fixture. The client test suite runs in both Node.js and a real Chromium page.
 

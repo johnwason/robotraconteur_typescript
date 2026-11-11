@@ -12,6 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+/**
+ * The Robot Raconteur client: nodes, connections, transports, subscriptions, and the service
+ * definition parser.
+ *
+ * @module robotraconteur
+ */
+
 export { BrowserWebSocketTransport } from "./BrowserWebSocketTransport.js";
 export { ClientContext, GeneratorHandle, ServiceStub } from "./Client.js";
 export type { CallbackHandler, EventHandler } from "./Client.js";

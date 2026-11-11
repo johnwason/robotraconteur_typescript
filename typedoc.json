@@ -17,5 +17,19 @@
     "intentionallyNotExported": [
         "StreamTransportParent",
         "Message"
-    ]
+    ],
+    "readme": "README.md",
+    "projectDocuments": [
+        "docs/guide/getting-started.md",
+        "docs/guide/using-services.md",
+        "docs/guide/wires-and-pipes.md",
+        "docs/guide/subscriptions.md",
+        "docs/guide/value-types.md",
+        "docs/guide/service-definitions.md",
+        "docs/guide/limits.md"
+    ],
+    "navigation": {
+        "includeCategories": false,
+        "includeGroups": true
+    }
 }
