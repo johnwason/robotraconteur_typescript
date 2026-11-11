@@ -9,7 +9,7 @@ title: Limits
 * Client only. Services are written with [robotraconteur-node](https://github.com/johnwason/robotraconteur_typescript_node).
 * Message Format Version 2. Message Version 4 is not offered during connection.
 * Only `rr+ws` and `rr+wss` connections through the `WebSocket` class. `tcp` and `rr+tcp` URLs are converted to WebSocket connections, matching RobotRaconteurWeb. robotraconteur-node adds `rr+tcp` and `rrs+tcp`.
-* Memories, object locks, and `rrs+` end-to-end encryption are not implemented.
+* Memories and `rrs+` end-to-end encryption are not implemented.
 * Discovery is in robotraconteur-node, since browsers cannot use UDP.
 * Assumes a little-endian host, which covers browser platforms.
 

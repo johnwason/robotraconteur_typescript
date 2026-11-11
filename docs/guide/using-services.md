@@ -82,6 +82,33 @@ Handlers run as messages arrive, so long running work should be moved out of the
 
 Failures reject with a {@link robotraconteur!RobotRaconteurError | RobotRaconteurError}. Its `errorName` identifies the error, such as `RobotRaconteur.InvalidArgument` or an exception from the service definition, and the service may add `errorSubName` and `errorParam`. Requests time out after {@link robotraconteur!RobotRaconteurNode.requestTimeout | RobotRaconteurNode.requestTimeout} milliseconds, 15 seconds by default.
 
+## Locks
+
+A service that allows it lets a logged in user with the `objectlock` privilege lock an object, and the objects under it, so that other users cannot change them:
+
+```js
+const arm = await robot.getObjRef("arm");
+await node.requestObjectLock(arm);
+// ...
+await node.releaseObjectLock(arm);
+```
+
+{@link robotraconteur!RobotRaconteurNode.requestObjectLock | requestObjectLock} locks for every client of the user by default, or for this client only with `"client"`. Other clients receive `RobotRaconteur.ObjectLockedError`, except for members marked `nolock`, or `nolockread` for reading. The lock is released when the client that made it disconnects, and a user with the `objectlockoverride` privilege can release other users' locks.
+
+A monitor lock gives one client at a time an object, for a short sequence of requests that must not be interleaved with another client's. It needs no login, and does not lock the objects under it:
+
+```js
+await node.monitorEnter(arm, 5000);
+try {
+    await arm.setProperty("speed", 0.5);
+    await arm.callFunction("move", [target]);
+} finally {
+    await node.monitorExit(arm);
+}
+```
+
+`monitorEnter` waits for clients that hold the lock, up to the timeout in milliseconds, or without limit by default.
+
 ## Constants, enums, and structures
 
 {@link robotraconteur!getConstants | getConstants} returns the constants and enums of a service definition, so that code does not repeat their values. {@link robotraconteur!newStructure | newStructure} returns a structure with every field set to its default, ready to fill in and send.

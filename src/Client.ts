@@ -88,6 +88,12 @@ export class GeneratorHandle<T = unknown> implements AsyncIterable<T, void, unkn
     }
 }
 
+/**
+ * Who an object lock is for, as Core's RobotRaconteurObjectLockFlags: "user" for every client
+ * logged in as the user (USER_LOCK), or "client" for this client only (CLIENT_LOCK)
+ */
+export type ObjectLockFlags = "user" | "client";
+
 function error(code: MessageErrorType, name: string, message: string): RobotRaconteurError
 {
     return new RobotRaconteurError(code, "RobotRaconteur." + name, message);
@@ -968,6 +974,46 @@ export class ClientContext
             await this.processRequest(auth);
         }
         return type;
+    }
+
+    /** Send an object lock or monitor lock request for an object, returning the service's answer */
+    private async lockOp(stub: ServiceStub, op: string, elements: MessageElement[] = []): Promise<string>
+    {
+        const m = new MessageEntry(MessageEntryType.ClientSessionOpReq, op);
+        m.servicePath = stub.servicePath;
+        m.elements = elements;
+        const ret = await this.processRequest(m);
+        return findElement(ret.elements, "return")?.castString() ?? "";
+    }
+
+    /** Lock an object, as Core's ClientContext::RequestObjectLock. See RobotRaconteurNode.requestObjectLock */
+    requestObjectLock(stub: ServiceStub, flags: ObjectLockFlags): Promise<string>
+    {
+        if (flags !== "user" && flags !== "client") throw error(MessageErrorType.InvalidArgument, "InvalidArgument", `Unknown object lock flags: ${String(flags)}`);
+        return this.lockOp(stub, flags === "user" ? "RequestObjectLock" : "RequestClientObjectLock");
+    }
+
+    /** Release an object lock, as Core's ClientContext::ReleaseObjectLock */
+    releaseObjectLock(stub: ServiceStub): Promise<string>
+    {
+        return this.lockOp(stub, "ReleaseObjectLock");
+    }
+
+    /**
+     * Wait for the monitor lock of an object, as Core's ClientContext::MonitorEnter. The service
+     * answers "Continue" every few seconds while the client waits, and the client asks again.
+     */
+    async monitorEnter(stub: ServiceStub, timeout: number): Promise<void>
+    {
+        let r = await this.lockOp(stub, "MonitorEnter", [new MessageElement("timeout", DataTypes.int32_t, Int32Array.of(timeout))]);
+        while (r === "Continue") r = await this.lockOp(stub, "MonitorContinueEnter");
+        if (r !== "OK") throw error(MessageErrorType.ProtocolError, "ProtocolError", "Unknown return code");
+    }
+
+    /** Release the monitor lock of an object, as Core's ClientContext::MonitorExit */
+    async monitorExit(stub: ServiceStub): Promise<void>
+    {
+        await this.lockOp(stub, "MonitorExit");
     }
 
     private readAttributes(ret: MessageEntry): void

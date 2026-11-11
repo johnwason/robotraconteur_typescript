@@ -400,6 +400,113 @@ export function clientTests(node: RobotRaconteurNode, port: number, vectors: Vec
         }, RobotRaconteurError);
     });
 
+    // Core's TestObjectLock
+    add("object locks", async () =>
+    {
+        const connect = async (user: string, pass: string) =>
+        {
+            const r = await node.connectService(url(AUTH), user, password(pass));
+            const o = await r.getObjRef("o1");
+            return { r, o, o2: await o.getObjRef("o2_1") };
+        };
+        const use = async (c: { r: ServiceStub; o: ServiceStub; o2: ServiceStub }) =>
+        {
+            await c.r.callFunction("func3", [2.2, 3.3]);
+            await c.o.setProperty("d1", [1.0]);
+            await c.o2.setProperty("data", "Hello world");
+        };
+        const locked = (p: Promise<unknown>) => assert.rejects(p, errorNamed("RobotRaconteur.ObjectLockedError"));
+
+        // Two sessions of testuser1 and one of testuser2
+        let c1 = await connect("testuser1", "testpass1");
+        const c2 = await connect("testuser1", "testpass1");
+        const c3 = await connect("testuser2", "testpass2");
+        await use(c1);
+        await use(c2);
+        await use(c3);
+
+        // A user lock lets every session of the user use the object and the objects under it
+        assert.equal(await node.requestObjectLock(c1.o, "user"), "OK");
+        await use(c1);
+        await use(c2);
+        await c3.r.callFunction("func3", [2.2, 3.3]);
+        await locked(c3.o.setProperty("d1", [1.0]));
+        await locked(c3.o2.setProperty("data", "Hello world"));
+
+        assert.equal(await node.releaseObjectLock(c1.o), "OK");
+        await use(c1);
+        await use(c2);
+        await use(c3);
+
+        // The lock is released when the session that made it disconnects, not another session
+        await node.requestObjectLock(c1.o);
+        await locked(c3.o.setProperty("d1", [1.0]));
+        await c2.o.setProperty("d1", [1.0]);
+        await node.disconnectService(c2.r);
+        await locked(c3.o.setProperty("d1", [1.0]));
+        await node.disconnectService(c1.r);
+        await c3.o.setProperty("d1", [1.0]);
+
+        // A client lock lets only the session that made it use the object
+        c1 = await connect("testuser1", "testpass1");
+        const c4 = await connect("testuser1", "testpass1");
+        await node.requestObjectLock(c1.o, "client");
+        await c1.o.setProperty("d1", [1.0]);
+        await locked(c4.o.setProperty("d1", [1.0]));
+        await locked(c3.o.setProperty("d1", [1.0]));
+
+        // objectlockoverride releases other users' locks
+        const c5 = await connect("testsuperuser", "superpass1");
+        await node.releaseObjectLock(c5.o);
+        await c4.o.setProperty("d1", [1.0]);
+        await c3.o.setProperty("d1", [1.0]);
+
+        await assert.rejects(node.requestObjectLock(c1.o, "other" as "user"), errorNamed("RobotRaconteur.InvalidArgument"));
+        for (const c of [c1, c3, c4, c5]) await node.disconnectService(c.r);
+    });
+
+    add("object locks need a logged in user", withClient(S1, async (r) =>
+    {
+        await assert.rejects(node.requestObjectLock(await r.getObjRef("o1")), RobotRaconteurError);
+    }));
+
+    // Core's TestMonitorLock
+    add("monitor locks", async () =>
+    {
+        const r1 = await node.connectService(url(S1));
+        const r2 = await node.connectService(url(S1));
+        try
+        {
+            const o1 = await r1.getObjRef("o1");
+            const o2 = await r2.getObjRef("o1");
+            await node.monitorEnter(o1);
+
+            // The second client waits until the first exits
+            let entered = false;
+            const second = node.monitorEnter(o2, 10000).then(() =>
+            {
+                entered = true;
+            });
+            await new Promise((resolve) => setTimeout(resolve, 200));
+            await o1.setProperty("d1", [0.0]);
+            assert.equal(entered, false);
+            await node.monitorExit(o1);
+            await second;
+            assert.equal(entered, true);
+            await o2.setProperty("d1", [0.0]);
+            await node.monitorExit(o2);
+
+            // The lock can be entered again once released
+            await node.monitorEnter(o1, 1000);
+            await node.monitorExit(o1);
+        }
+        finally
+        {
+            await node.disconnectService(r1);
+            await node.disconnectService(r2);
+        }
+    });
+
     add("large messages are fragmented and reassembled", withClient(S1, async (r) =>
     {
         const huge = (await r.getProperty("i32_huge")) as Int32Array;

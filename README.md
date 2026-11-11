@@ -4,7 +4,7 @@
 
 A small, dependency-free TypeScript client for [Robot Raconteur](https://github.com/robotraconteur/robotraconteur) that runs in the browser and communicates over WebSockets.
 
-**Status:** experimental. The client covers properties, functions, generators, objects, events, callbacks, wires, pipes, and subscriptions. Memories and locks are not supported.
+**Status:** experimental. The client covers properties, functions, generators, objects, events, callbacks, wires, pipes, object and monitor locks, and subscriptions. Memories are not supported.
 
 ## Quick start
 
@@ -25,7 +25,7 @@ You only need a web browser and Python. No Node.js or TypeScript is required.
 The [documentation](https://johnwason.github.io/robotraconteur_typescript/) has a guide and an API reference. The guide pages are also in this repository:
 
 - [Getting started](docs/guide/getting-started.md): in a web page, with a bundler, and in Node.js
-- [Using a service](docs/guide/using-services.md): properties, functions, generators, objects, events, and callbacks
+- [Using a service](docs/guide/using-services.md): properties, functions, generators, objects, events, callbacks, and locks
 - [Wires and pipes](docs/guide/wires-and-pipes.md): streaming values and packets
 - [Staying connected](docs/guide/subscriptions.md): subscriptions that reconnect
 - [Value types](docs/guide/value-types.md): how Robot Raconteur types appear in JavaScript
@@ -77,7 +77,7 @@ The tests use the standard service definitions from the Core repository (`test/r
 
 | Area | Source | How it is checked |
 | --- | --- | --- |
-| `TestProperties`, `TestFunctions`, `TestEvents`, `TestObjRefs`, `TestPipes`, `TestCallbacks`, `TestWires`, `TestWirePeekPoke`, `TestEnums`, `TestPods`, `TestGenerators`, `TestNamedArrays`, `TestComplex`, `TestNoLock`, `TestBools`, `TestExceptionParams` | Core `ServiceTestClient.py` and `ServiceTestClient2.py` | Ported under the same names in `test/common`, for the members this client implements |
+| `TestProperties`, `TestFunctions`, `TestEvents`, `TestObjRefs`, `TestPipes`, `TestCallbacks`, `TestWires`, `TestWirePeekPoke`, `TestEnums`, `TestPods`, `TestGenerators`, `TestNamedArrays`, `TestComplex`, `TestNoLock`, `TestBools`, `TestExceptionParams`, `TestObjectLock`, `TestMonitorLock` | Core `ServiceTestClient.py` and `ServiceTestClient2.py` | Ported under the same names in `test/common`, for the members this client implements |
 | `TestProperties` and `TestFunctions` for TestService5 | Core `ServiceTestClient3.py` | Ported |
 | The same operations as made by the Core Python client | Core test clients | Recorded and replayed against the same server, as an independent check |
 | Authentication, attributes | Core and RobotRaconteurWeb client tests | Ported |
@@ -85,7 +85,7 @@ The tests use the standard service definitions from the Core repository (`test/r
 | Service path index encoding | Core `EncodeServicePathIndexTest` | Same vectors |
 | Service definition parsing | Core and RobotRaconteurWeb `RobDef` tests | Compared with the Core parser's reading of each file |
 
-Tests for members this client does not implement (memories, object and monitor locks) and for Message Version 4 are not ported. Core `MultiDimArray` tests are not applicable because this client has no multidimensional array class. Service definition string conversion and constant value evaluation from `RobDefTest` are not implemented.
+Tests for members this client does not implement (memories) and for Message Version 4 are not ported. Core `MultiDimArray` tests are not applicable because this client has no multidimensional array class. Service definition string conversion and constant value evaluation from `RobDefTest` are not implemented.
 
 `npm run fixtures` regenerates the following files:
 
