@@ -15,7 +15,7 @@
 import { RobotRaconteurError } from "./Error.js";
 import { Message } from "./Message.js";
 import { NodeID } from "./NodeID.js";
-import { MessageEntryType, MessageErrorType } from "./DataTypes.js";
+import { MessageErrorType } from "./DataTypes.js";
 
 export interface ParsedConnectionUrl
 {
@@ -90,30 +90,6 @@ export interface ITransportConnection
     sendMessageWait(m: Message): Promise<void>;
     close(): void;
 }
-
-/**
- * Whether a message is a request to the node itself rather than to an endpoint, as in Core. These
- * are requests below entry type 500, except ServiceClosed and ObjectTypeName sent to an endpoint.
- */
-export function isSpecialRequest(m: Message): boolean
-{
-    const e = m.entries[0];
-    if (!e || e.entryType >= 500 || e.entryType % 2 !== 1) return false;
-    if (e.entryType === MessageEntryType.ServiceClosed) return false;
-    if (e.entryType === MessageEntryType.ObjectTypeName && m.header.receiverEndpoint !== 0) return false;
-    return true;
-}
-
-/** A transport connection accepted from a client. Several service endpoints may use it */
-export interface ServerTransportConnection extends ITransportConnection
-{
-    /** Notify the endpoint when the connection closes */
-    attachEndpoint(e: Endpoint): void;
-    detachEndpoint(e: Endpoint): void;
-}
-
-/** Answers requests to the node itself, such as GetServiceDesc and ConnectClient. Set by a service host */
-export type SpecialRequestHandler = (m: Message, connection: ServerTransportConnection) => Promise<Message | null>;
 
 export interface Transport
 {

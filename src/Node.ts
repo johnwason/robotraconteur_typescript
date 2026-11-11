@@ -16,7 +16,7 @@ import { ClientContext, ServiceStub } from "./Client.js";
 import { Message } from "./Message.js";
 import { NodeID } from "./NodeID.js";
 import { parseServiceDefinition, ServiceDefinition } from "./ServiceDefinition.js";
-import { Endpoint, ITransportConnection, parseConnectionUrl, ServerTransportConnection, SpecialRequestHandler, Transport } from "./Transport.js";
+import { Endpoint, ITransportConnection, parseConnectionUrl, Transport } from "./Transport.js";
 import { errorReturnMessage } from "./MessageError.js";
 import { RobotRaconteurError } from "./Error.js";
 import { MessageErrorType } from "./DataTypes.js";
@@ -36,10 +36,6 @@ export class RobotRaconteurNode
     endpointInactivityTimeout = 600000;
 
     readonly serviceTypes = new Map<string, ServiceDefinition>();
-    /** The text of service definitions registered from text, which services send to clients */
-    readonly serviceTypeTexts = new Map<string, string>();
-    /** Answers requests to the node itself. Set when the node hosts services */
-    specialRequestHandler: SpecialRequestHandler | null = null;
 
     private transports: Transport[] = [];
     private endpoints = new Map<number, Endpoint>();
@@ -56,8 +52,6 @@ export class RobotRaconteurNode
     {
         const d = typeof def === "string" ? parseServiceDefinition(def) : def;
         this.serviceTypes.set(d.name, d);
-        if (typeof def === "string") this.serviceTypeTexts.set(d.name, def);
-        else this.serviceTypeTexts.delete(d.name);
         return d;
     }
 
@@ -232,18 +226,5 @@ export class RobotRaconteurNode
         {
             // The connection has closed
         }
-    }
-
-    /** Answer a request to the node itself, which a client sends before it has an endpoint */
-    specialRequest(m: Message, connection: ServerTransportConnection): Promise<Message | null>
-    {
-        if (this.specialRequestHandler) return this.specialRequestHandler(m, connection);
-        return Promise.resolve(errorReturnMessage(m, MessageErrorType.ServiceNotFound, "RobotRaconteur.ServiceNotFound", "Service not found"));
-    }
-
-    /** The endpoint with a local endpoint number, if it exists */
-    getEndpoint(local_endpoint: number): Endpoint | undefined
-    {
-        return this.endpoints.get(local_endpoint);
     }
 }

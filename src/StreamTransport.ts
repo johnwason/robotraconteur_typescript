@@ -17,9 +17,7 @@ import { RobotRaconteurError } from "./Error.js";
 import { deserializeMessage, findElement, Message, MessageElement, MessageEntry, serializeMessage } from "./Message.js";
 import { NodeID } from "./NodeID.js";
 import type { RobotRaconteurNode } from "./Node.js";
-import { errorReturnMessage, errorToEntry } from "./MessageError.js";
-import { isSpecialRequest } from "./Transport.js";
-import type { Endpoint, ServerTransportConnection } from "./Transport.js";
+import type { Endpoint, ITransportConnection } from "./Transport.js";
 
 /** The Robot Raconteur TCP Transport standard limits WebSocket frames to 64 KB */
 const MAX_FRAME_SIZE = 65536;
@@ -46,28 +44,6 @@ export interface SocketEvents
 }
 
 export type SocketOpener = (events: SocketEvents) => Promise<SocketAdapter>;
-
-/** The node that answered a STARTTLS request, which its certificate must identify */
-export interface TlsPeer
-{
-    nodeID: NodeID;
-    nodeName: string;
-    /** True if the server agreed to check a client certificate */
-    mutualAuth: boolean;
-}
-
-/**
- * Switch the connection to TLS after STARTTLS, and verify the server. Returns the socket to use
- * from then on, which must deliver its data to the same events.
- */
-export type TlsStarter = (events: SocketEvents, peer: TlsPeer) => Promise<SocketAdapter>;
-
-export interface StreamTlsOptions
-{
-    start: TlsStarter;
-    /** Ask the server to check a client certificate */
-    mutualAuth: boolean;
-}
 
 /** The settings and owner of the connections of a stream transport */
 export interface StreamTransportParent
@@ -177,23 +153,19 @@ interface StreamOpWait
 }
 
 /**
- * The Basic Stream Protocol: framing, send queue, heartbeat, and the connection handshake. A client
- * opens the connection with connect(), and a server takes an accepted socket with accept().
+ * The Basic Stream Protocol for a client: framing, send queue, heartbeat, and the connection
+ * handshake. robotraconteur-node extends it for TLS and for connections accepted by a server.
  */
-export class StreamConnection implements ServerTransportConnection
+export class StreamConnection implements ITransportConnection
 {
     remoteNodeID = NodeID.Any;
     useCombinedConnection = false;
 
-    private socket!: SocketAdapter;
+    protected socket!: SocketAdapter;
     private send_queue!: SendQueue;
-    private connected = false;
-    /** Set for a connection accepted by a server */
-    private server = false;
-    /** Set once a server has answered CreateConnection */
-    private created = false;
-    private handshake_timer: ReturnType<typeof setTimeout> | undefined;
-    private endpoints = new Set<Endpoint>();
+    protected connected = false;
+    /** Notified when the connection closes */
+    protected endpoints = new Set<Endpoint>();
 
     private recv_buf = new Uint8Array(65536);
     private recv_len = 0;
@@ -205,21 +177,12 @@ export class StreamConnection implements ServerTransportConnection
     private tlastrec_mes = Date.now();
 
     /** The node to connect to, for a client. A client also gives its endpoint */
-    constructor(private parent: StreamTransportParent, private target_nodeid = NodeID.Any, private target_nodename = "", endpoint?: Endpoint)
+    constructor(protected parent: StreamTransportParent, protected target_nodeid = NodeID.Any, protected target_nodename = "", endpoint?: Endpoint)
     {
         if (endpoint) this.endpoints.add(endpoint);
     }
 
-    /** True once TLS is in use */
-    secure = false;
-
-    /** True for a connection accepted by a server */
-    get isServer(): boolean
-    {
-        return this.server;
-    }
-
-    private events(): SocketEvents
+    protected events(): SocketEvents
     {
         return {
             onData: (frame) => this.dataReceived(frame),
@@ -227,7 +190,7 @@ export class StreamConnection implements ServerTransportConnection
         };
     }
 
-    private start(socket: SocketAdapter): void
+    protected start(socket: SocketAdapter): void
     {
         this.socket = socket;
         this.send_queue = new SendQueue((frame) => this.socket.write(frame), () =>
@@ -237,22 +200,21 @@ export class StreamConnection implements ServerTransportConnection
         this.connected = true;
     }
 
-    private startHeartbeat(): void
+    protected startHeartbeat(): void
     {
         this.tlastsend = this.tlastrec = this.tlastrec_mes = Date.now();
         this.heartbeat = setInterval(() => this.doHeartbeat(), 500);
         (this.heartbeat as unknown as { unref?: () => void }).unref?.();
     }
 
-    async connect(open: SocketOpener, tls?: StreamTlsOptions): Promise<void>
+    async connect(open: SocketOpener): Promise<void>
     {
         const events = this.events();
         this.start(await open(events));
 
         try
         {
-            if (tls) await this.startTls(tls, events);
-            await this.createConnection();
+            await this.handshake(events);
         }
         catch (e)
         {
@@ -262,34 +224,14 @@ export class StreamConnection implements ServerTransportConnection
         this.startHeartbeat();
     }
 
-    /**
-     * Serve a socket accepted from a client. The client must create the connection within
-     * handshake_timeout milliseconds, or the socket is closed.
-     */
-    async accept(open: SocketOpener, handshake_timeout: number): Promise<void>
+    /** Create the connection once the socket is open. Overridden to start TLS first */
+    protected handshake(_events: SocketEvents): Promise<void>
     {
-        this.server = true;
-        this.start(await open(this.events()));
-        this.handshake_timer = setTimeout(() =>
-        {
-            if (!this.created) this.close();
-        }, handshake_timeout);
-        (this.handshake_timer as unknown as { unref?: () => void }).unref?.();
-        this.startHeartbeat();
-    }
-
-    attachEndpoint(e: Endpoint): void
-    {
-        this.endpoints.add(e);
-    }
-
-    detachEndpoint(e: Endpoint): void
-    {
-        this.endpoints.delete(e);
+        return this.createConnection();
     }
 
     /** Send a stream operation and wait for its reply, failing if the reply reports an error */
-    private async streamOp(m: Message, timeout_message: string, failure_message: string): Promise<Message>
+    protected async streamOp(m: Message, timeout_message: string, failure_message: string): Promise<Message>
     {
         const ret = await new Promise<Message>((resolve, reject) =>
         {
@@ -316,33 +258,6 @@ export class StreamConnection implements ServerTransportConnection
             throw new RobotRaconteurError(entry.error, findElement(entry.elements, "errorname")?.castString() ?? "RobotRaconteur.ConnectionError", s?.castString() ?? failure_message);
         }
         return ret;
-    }
-
-    /** Ask the server to switch to TLS, as Core does before creating the connection */
-    private async startTls(tls: StreamTlsOptions, events: SocketEvents): Promise<void>
-    {
-        const m = new Message();
-        m.header.senderNodeID = this.parent.node.nodeID;
-        m.header.senderNodeName = this.parent.node.nodeName;
-        m.header.receiverNodeID = this.target_nodeid;
-        m.header.receiverNodeName = this.target_nodename;
-        const mm = new MessageEntry(MessageEntryType.StreamOp, "STARTTLS");
-        if (tls.mutualAuth) mm.addElement(MessageElement.string("mutualauth", "true"));
-        m.entries.push(mm);
-
-        const ret = await this.streamOp(m, "Timed out starting TLS", "Could not start TLS");
-        const sender_id = ret.header.senderNodeID;
-        const sender_name = ret.header.senderNodeName;
-        const any_target = this.target_nodeid.isAnyNode;
-        // The same checks as Core, so that the certificate is checked against the node that was requested
-        const matches = (any_target && this.target_nodename === "")
-            || (!any_target && this.target_nodeid.equals(sender_id))
-            || (any_target && sender_name === this.target_nodename);
-        if (!matches) throw connectionError("Could not create TLS connection");
-
-        const mutual = findElement(ret.entries[0]!.elements, "mutualauth")?.castString() === "true";
-        this.socket = await tls.start(events, { nodeID: sender_id, nodeName: sender_name, mutualAuth: tls.mutualAuth && mutual });
-        this.secure = true;
     }
 
     private async createConnection(): Promise<void>
@@ -466,120 +381,23 @@ export class StreamConnection implements ServerTransportConnection
             }
         }
 
-        if (this.server)
-        {
-            // Nothing but stream operations is accepted until the client has created the connection,
-            // and afterwards only from the node that created it
-            if (!this.created)
-            {
-                this.close();
-                return;
-            }
-            if (!m.header.senderNodeID.equals(this.remoteNodeID))
-            {
-                this.sendMessage(errorReturnMessage(m, MessageErrorType.NodeNotFound, "RobotRaconteur.NodeNotFound", "Invalid sender node"));
-                return;
-            }
-        }
-
+        if (this.rejectMessage(m)) return;
         this.tlastrec_mes = this.tlastrec;
-        if (isSpecialRequest(m))
-        {
-            void this.processSpecialRequest(m);
-            return;
-        }
+        this.routeMessage(m);
+    }
+
+    /** Stream operations are only answered by a server */
+    protected processStreamOp(_m: Message): void {}
+
+    /** True to drop a message instead of routing it. A server drops messages from other nodes */
+    protected rejectMessage(_m: Message): boolean
+    {
+        return false;
+    }
+
+    protected routeMessage(m: Message): void
+    {
         this.parent.node.messageReceived(m, this);
-    }
-
-    private async processSpecialRequest(m: Message): Promise<void>
-    {
-        try
-        {
-            const ret = await this.parent.node.specialRequest(m, this);
-            if (ret && ret.entries.length > 0 && this.connected) this.sendMessage(ret);
-        }
-        catch
-        {
-            this.close();
-        }
-    }
-
-    /** Answer a stream operation from a client, as a server */
-    private processStreamOp(m: Message): void
-    {
-        const req = m.entries[0]!;
-        const node = this.parent.node;
-        const r = new Message();
-        r.header.senderNodeID = node.nodeID;
-        r.header.senderNodeName = node.nodeName;
-        r.header.receiverNodeID = m.header.senderNodeID;
-        r.header.receiverNodeName = m.header.senderNodeName;
-        const ret = new MessageEntry(MessageEntryType.StreamOpRet, req.memberName);
-        r.entries.push(ret);
-
-        try
-        {
-            switch (req.memberName)
-            {
-            case "GetRemoteNodeID":
-                break;
-            case "CreateConnection":
-                this.serverCreateConnection(m, ret);
-                break;
-            case "STARTTLS":
-                throw connectionError("This service does not support TLS");
-            default:
-                throw new RobotRaconteurError(MessageErrorType.ProtocolError, "RobotRaconteur.ProtocolError", "Unknown stream operation");
-            }
-        }
-        catch (e)
-        {
-            ret.elements = [];
-            errorToEntry(e, ret);
-        }
-        try
-        {
-            this.sendMessage(r);
-        }
-        catch
-        {
-            // The connection has closed
-        }
-    }
-
-    /** Accept CreateConnection for this node, agreeing on the capabilities both sides support, as Core does */
-    private serverCreateConnection(m: Message, ret: MessageEntry): void
-    {
-        const node = this.parent.node;
-        const h = m.header;
-        const for_node = h.receiverNodeID.isAnyNode || h.receiverNodeID.equals(node.nodeID);
-        if (!for_node || (h.receiverNodeName !== "" && h.receiverNodeName !== node.nodeName))
-        {
-            throw new RobotRaconteurError(MessageErrorType.NodeNotFound, "RobotRaconteur.NodeNotFound", "Node not found");
-        }
-
-        const caps = findElement(m.entries[0]!.elements, "capabilities")?.data;
-        if (caps instanceof Uint32Array)
-        {
-            let message2 = 0;
-            for (const cap of caps)
-            {
-                if (((cap & TransportCapabilityCode.PageMask) >>> 0) === TransportCapabilityCode.Message2BasicPage)
-                {
-                    message2 = cap & (TransportCapabilityCode.Message2BasicEnable | TransportCapabilityCode.Message2BasicConnectCombined);
-                }
-            }
-            if ((message2 & TransportCapabilityCode.Message2BasicEnable) === 0)
-            {
-                throw new RobotRaconteurError(MessageErrorType.ProtocolError, "RobotRaconteur.ProtocolError", "Transport must support Message Version 2");
-            }
-            // Message Version 4 is not offered, so the client continues with Message Version 2
-            ret.addElement(new MessageElement("capabilities", DataTypes.uint32_t, Uint32Array.of((message2 | TransportCapabilityCode.Message2BasicPage) >>> 0)));
-        }
-
-        this.remoteNodeID = h.senderNodeID;
-        this.created = true;
-        clearTimeout(this.handshake_timer);
     }
 
     private sendEmptyResponse(m: Message, entry: MessageEntry): void
@@ -645,7 +463,6 @@ export class StreamConnection implements ServerTransportConnection
         if (!this.connected) return;
         this.connected = false;
         clearInterval(this.heartbeat);
-        clearTimeout(this.handshake_timer);
         this.parent.removeConnection(this);
 
         const w = this.streamop_wait;

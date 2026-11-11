@@ -19,7 +19,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { EntryDefinition, MemberDefinition, parseServiceDefinition, parseTypeDefinition, ServiceDefinition, TypeDefinition } from "../../src/ServiceDefinition.js";
-import { verifyServiceDefinition, verifyServiceDefinitions } from "../../src/ServiceDefinitionValidators.js";
+import { verifyServiceDefinition, verifyServiceDefinitionOrder, verifyServiceDefinitions } from "../../src/ServiceDefinitionValidators.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const robdef_dir = join(root, "test/robdef");
@@ -155,7 +155,7 @@ test("parser rejects malformed definitions", () =>
     for (const s of bad) assert.throws(() => parseServiceDefinition(s), Error, s);
 });
 
-test("entries must be in the same order as Core requires", () =>
+test("the validators check that entries are in the order Core requires", () =>
 {
     const object = "object o\nproperty double p\nend\n";
     const order_errors: [string, RegExp][] = [
@@ -166,9 +166,13 @@ test("entries must be in the same order as Core requires", () =>
         [svc("exception e\nusing a.b.c"), /using must be after imports/],
         [svc("import a.b\nstdver 0.10"), /stdver must be first after service name/]
     ];
-    for (const [s, message] of order_errors) assert.throws(() => parseServiceDefinition(s), message, s);
-    // Exceptions, constants, and enums may be in any order before the first structure or object
-    parseServiceDefinition(svc("enum e\na = 1\nend\nexception x\nconstant int32 c 1\n" + object));
+    for (const [s, message] of order_errors) assert.throws(() => verifyServiceDefinitionOrder(s), message, s);
+    // The parser accepts entries in any order
+    parseServiceDefinition(svc(object + "exception e\nconstant int32 c 1"));
+    // Exceptions, constants, and enums may be in any order before the first structure or object,
+    // and options anywhere. Lines in blocks are not entries, even if they start with a keyword
+    verifyServiceDefinitionOrder(svc("option a\nenum e\na = 1\nend\nexception x\noption b\nconstant int32 c 1\n" + object + "option c"));
+    verifyServiceDefinitionOrder(svc("struct s\nfield double f\nend\nobject o\nconstant int32 c 1\nend"));
 });
 
 function verifies(body: string): void
