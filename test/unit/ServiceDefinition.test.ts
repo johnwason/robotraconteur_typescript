@@ -155,6 +155,18 @@ test("parser rejects malformed definitions", () =>
     for (const s of bad) assert.throws(() => parseServiceDefinition(s), Error, s);
 });
 
+test("a keyword after end is allowed before stdver 0.9.2, as in Core", () =>
+{
+    for (const v of ["0.9", "0.9.1"])
+    {
+        const d = parseServiceDefinition(`service test.svc\nstdver ${v}\nstruct a\nfield double b\nend struct\nobject c\nproperty double d\nend object\n`);
+        assert.equal(d.structures.length, 1, v);
+        assert.equal(d.objects.length, 1, v);
+        assert.throws(() => parseServiceDefinition(`service test.svc\nstdver ${v}\nstruct a\nfield double b\nend object\n`), Error, v);
+    }
+    assert.throws(() => parseServiceDefinition("service test.svc\nstdver 0.9.2\nstruct a\nfield double b\nend struct\n"), Error);
+});
+
 test("the validators check that entries are in the order Core requires", () =>
 {
     const object = "object o\nproperty double p\nend\n";
