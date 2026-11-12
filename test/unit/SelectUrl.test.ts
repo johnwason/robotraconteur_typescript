@@ -15,6 +15,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { BrowserWebSocketTransport } from "../../src/BrowserWebSocketTransport.js";
 import { RobotRaconteurError } from "../../src/Error.js";
 import { RobotRaconteurNode } from "../../src/Node.js";
 import type { Endpoint, ITransportConnection, Transport } from "../../src/Transport.js";
@@ -58,4 +59,35 @@ test("candidate URLs are started in order of preference, shortly apart", async (
     assert.deepEqual(started.map((s) => s.url), ["rrs+tcp://h:1/?service=s", "rr+tcp://h:1/?service=s", "rr+ws://h/?service=s"]);
     assert.ok(started[1]!.time - started[0]!.time >= 10, "the next URL waits for the preferred one to start");
     await node.shutdown();
+});
+
+test("rr+tcp URLs without a port connect to port 48653, as in Core", async () =>
+{
+    const opened: string[] = [];
+    class FakeWebSocket
+    {
+        onerror: (() => void) | null = null;
+        constructor(url: string)
+        {
+            opened.push(url);
+            setTimeout(() => this.onerror?.(), 0);
+        }
+        close(): void {}
+    }
+    const saved = (globalThis as { WebSocket?: unknown }).WebSocket;
+    (globalThis as { WebSocket?: unknown }).WebSocket = FakeWebSocket;
+    try
+    {
+        const t = new BrowserWebSocketTransport(new RobotRaconteurNode());
+        t.useWebSocketStream = false;
+        for (const url of ["rr+tcp://robot?service=s", "rr+tcp://[fe80::1]/?service=s", "rr+tcp://robot:1234?service=s", "rr+ws://robot/path?service=s"])
+        {
+            await assert.rejects(t.createTransportConnection(url, undefined as never));
+        }
+    }
+    finally
+    {
+        (globalThis as { WebSocket?: unknown }).WebSocket = saved;
+    }
+    assert.deepEqual(opened, ["ws://robot:48653?service=s", "ws://[fe80::1]:48653/?service=s", "ws://robot:1234?service=s", "ws://robot:80/path?service=s"]);
 });

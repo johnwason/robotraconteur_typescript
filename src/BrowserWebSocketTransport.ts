@@ -193,7 +193,8 @@ export class BrowserWebSocketTransport implements Transport, StreamTransportPare
     {
         const u = parseConnectionUrl(url);
         if (u.host === "") throw connectionError("Invalid connection URL for WebSocket");
-        const ws_url = url.replace(u.scheme + "://", (u.scheme.endsWith("wss") ? "wss" : "ws") + "://");
+        // Use the parsed host and port, which has the scheme's default port, such as 48653 for rr+tcp
+        const ws_url = url.replace(/^[^:]+:\/\/[^/?]*/, (u.scheme.endsWith("wss") ? "wss" : "ws") + "://" + u.host + (u.port > 0 ? ":" + u.port : ""));
 
         const c = new StreamConnection(this, u.nodeid, u.nodename, endpoint);
         const stream_ctor = this.useWebSocketStream ? webSocketStreamConstructor() : undefined;
