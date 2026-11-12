@@ -1080,14 +1080,14 @@ export class ClientContext
             if (!d || !o) return false;
             return o.implements.some((n) => check(n.includes(".") ? n : d.name + "." + n, seen));
         };
-        if (!check(object_type, new Set())) throw error(MessageErrorType.ObjectNotFound, "ServiceError", "Invalid object type");
+        if (!check(object_type, new Set())) throw error(MessageErrorType.ServiceError, "ServiceError", "Invalid object type");
     }
 
     /** The service definition of a qualified object type. Throws if the connection does not have it */
     serviceDefForType(object_type: string): ServiceDefinition
     {
         const d = this.types.defs.get(object_type.substring(0, object_type.lastIndexOf(".")));
-        if (!d) throw error(MessageErrorType.ObjectNotFound, "ServiceError", "Could not find service definition for " + object_type);
+        if (!d) throw error(MessageErrorType.ServiceError, "ServiceError", "Could not find service definition for " + object_type);
         return d;
     }
 

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import { GeneratorHandle, NamedArrayView, newNamedArrayView, parseTypeDefinition, RobotRaconteurError, RobotRaconteurNode, ServiceStub, TypeDefinition, VarValue } from "../../src/index.js";
-import { primitivesByName } from "../../src/DataTypes.js";
+import { MessageErrorType, primitivesByName } from "../../src/DataTypes.js";
 import { TypeContext } from "../../src/Pack.js";
 import { ServiceDefinition } from "../../src/ServiceDefinition.js";
 import { assert } from "./check.js";
@@ -410,7 +410,9 @@ export function clientTests(node: RobotRaconteurNode, port: number, vectors: Vec
         await r.setProperty("d1", 3.456);
         assert.equal(await r.getProperty("d1"), 12.345);
         await node.disconnectService(r);
-        await assert.rejects(node.connectService(url(S1), undefined, undefined, "com.robotraconteur.testing.TestService2.subobj"), RobotRaconteurError);
+        // Core throws ServiceException, which has the ServiceError code
+        await assert.rejects(node.connectService(url(S1), undefined, undefined, "com.robotraconteur.testing.TestService2.subobj"),
+            (e: RobotRaconteurError) => e instanceof RobotRaconteurError && e.errorCode === MessageErrorType.ServiceError && e.errorName === "RobotRaconteur.ServiceError");
     });
 
     add("authentication", async () =>
