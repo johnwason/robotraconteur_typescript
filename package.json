@@ -34,7 +34,8 @@
             "types": "./dist/ServiceDefinitionValidators.d.ts",
             "default": "./dist/ServiceDefinitionValidators.js"
         },
-        "./service-definition.schema.json": "./service-definition.schema.json"
+        "./service-definition.schema.json": "./service-definition.schema.json",
+        "./package.json": "./package.json"
     },
     "files": [
         "dist",

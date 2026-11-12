@@ -2,6 +2,10 @@
 
 The API may change in any release before 1.0.
 
+## Unreleased
+
+* Export `./package.json`, so that tools can read the package's version with `require("robotraconteur/package.json")`.
+
 ## 0.1.0
 
 The first release: a small Robot Raconteur client in TypeScript for browsers and Node.js, with no dependencies.
