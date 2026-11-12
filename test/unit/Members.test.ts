@@ -173,6 +173,40 @@ test("a pipe closes instead of losing data when its queue overflows", () =>
     }
 });
 
+test("an overflowing pipe reports its close once", () =>
+{
+    const original = console.error;
+    let reported = 0;
+    console.error = () =>
+    {
+        reported++;
+    };
+    try
+    {
+        const { h } = pipe();
+        let called = 0;
+        h.closeCallback = () =>
+        {
+            called++;
+        };
+        h.maxReceiveQueue = 2;
+        // Packets held out of order are delivered together once the missing one arrives
+        h.packetReceived(pipePacket(3, 3));
+        h.packetReceived(pipePacket(4, 4));
+        h.packetReceived(pipePacket(5, 5));
+        h.packetReceived(pipePacket(1, 1));
+        h.packetReceived(pipePacket(2, 2));
+        h.packetReceived(pipePacket(6, 6));
+        assert.equal(h.closed, true);
+        assert.equal(called, 1);
+        assert.equal(reported, 1);
+    }
+    finally
+    {
+        console.error = original;
+    }
+});
+
 test("waiting for a packet resolves on arrival, timeout, or close", async () =>
 {
     const { h } = pipe();

@@ -191,6 +191,8 @@ export class PipeHandle
 
     private deliver(p: ReceivedPacket): void
     {
+        // Packets that arrive after the endpoint closed, such as after an overflow, are dropped
+        if (this.closed) return;
         this.queue.push(p);
         if (this.maxReceiveQueue > 0 && this.queue.length > this.maxReceiveQueue)
         {
