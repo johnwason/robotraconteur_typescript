@@ -132,6 +132,15 @@ test("deserialize rejects corrupted messages", () =>
     }
 });
 
+test("serialize rejects a header longer than 65535 bytes", () =>
+{
+    // Each string fits in its uint16 length, but the header size does not, as in Core MessageHeader::ComputeSize
+    const m = sample();
+    m.header.senderNodeName = "a".repeat(30000);
+    m.header.metaData = "b".repeat(40000);
+    assert.throws(() => serializeMessage(m), RangeError);
+});
+
 test("NodeID parsing and formatting", () =>
 {
     const s = "{00112233-4455-6677-8899-aabbccddeeff}";

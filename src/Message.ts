@@ -165,6 +165,7 @@ class ArrayBinaryWriter
 
     patchU16(at: number, v: number): void
     {
+        if (v > 0xffff) throw new RangeError("Value exceeds maximum message field length");
         this.view.setUint16(at, v, true);
     }
 
