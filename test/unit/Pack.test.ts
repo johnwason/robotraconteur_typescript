@@ -17,7 +17,7 @@ import { test } from "node:test";
 
 import { DataTypes } from "../../src/DataTypes.js";
 import { RobotRaconteurError } from "../../src/Error.js";
-import { deserializeMessage, Message, MessageEntry, serializeMessage } from "../../src/Message.js";
+import { deserializeMessage, Message, MessageElement, MessageEntry, serializeMessage } from "../../src/Message.js";
 import { packElement, TypeContext, unpackElement, VarValue } from "../../src/Pack.js";
 import { parseServiceDefinition, parseTypeDefinition, ServiceDefinition } from "../../src/ServiceDefinition.js";
 import { newStructure } from "../../src/ServiceTypes.js";
@@ -242,6 +242,18 @@ test("varvalue", () =>
     const map = new Map([["k", new VarValue("a", "string")]]);
     rt(new VarValue(map, "varvalue{string}"), new VarValue(map, "varvalue{string}"));
     assert.throws(() => rt(5, null));
+});
+
+test("unpacking checks the element types of enums and multidimensional arrays", () =>
+{
+    // As Core's CastData, which throws DataTypeException
+    const t = (s: string) => parseTypeDefinition(s);
+    assert.equal(unpackElement(new MessageElement("v", DataTypes.int32_t, Int32Array.of(2)), t("e1"), def, ctx), 2);
+    assert.throws(() => unpackElement(new MessageElement("v", DataTypes.uint8_t, Uint8Array.of(1)), t("e1"), def, ctx), RobotRaconteurError);
+    assert.throws(() => unpackElement(new MessageElement("v", DataTypes.int32_t, new Int32Array(0)), t("e1"), def, ctx), RobotRaconteurError);
+    const md = (dims: MessageElement, array: MessageElement) => MessageElement.nested("v", DataTypes.multidimarray_t, "", [dims, array]);
+    assert.throws(() => unpackElement(md(new MessageElement("dims", DataTypes.uint32_t, Uint32Array.of(2)), new MessageElement("array", DataTypes.int32_t, Int32Array.of(1, 2))), t("double[*]"), def, ctx), RobotRaconteurError);
+    assert.throws(() => unpackElement(md(new MessageElement("dims", DataTypes.void_t, null), new MessageElement("array", DataTypes.double_t, Float64Array.of(1, 2))), t("double[*]"), def, ctx), RobotRaconteurError);
 });
 
 test("unknown types are rejected", () =>

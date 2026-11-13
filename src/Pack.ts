@@ -702,6 +702,7 @@ export function unpackElement(e: MessageElement, t: TypeDefinition, scope: Servi
     switch (r.kind)
     {
     case "enum":
+        if (e.elementType !== DataTypes.int32_t || (e.data as Int32Array).length !== 1) throw dataError("Invalid enum value for " + e.elementName);
         return (e.data as Int32Array)[0];
     case "struct":
         return unpackFields(e.castNested(DataTypes.structure_t).elements, r, ctx);
@@ -738,8 +739,8 @@ function unpackNumeric(e: MessageElement, t: TypeDefinition, p: PrimitiveInfo): 
     if (t.array === "multidimarray")
     {
         const l = e.castNested(DataTypes.multidimarray_t).elements;
-        const dims = findData(l, "dims") as Uint32Array;
-        const array = findData(l, "array") as NumericArray;
+        const dims = findData(l, "dims", DataTypes.uint32_t) as Uint32Array;
+        const array = findData(l, "array", p.type) as NumericArray;
         if (dims.reduce((a, b) => a * b, 1) * p.stride !== array.length) throw dataError("Array dimension mismatch");
         return { dims, array };
     }
@@ -754,10 +755,11 @@ function unpackNumeric(e: MessageElement, t: TypeDefinition, p: PrimitiveInfo): 
     return scalarFromArray(a, p, 0);
 }
 
-function findData(l: MessageElement[], name: string): unknown
+function findData(l: MessageElement[], name: string, type?: DataTypes): unknown
 {
     const e = l.find((x) => x.elementName === name);
     if (!e) throw dataError("Message element not found: " + name);
+    if (type !== undefined && e.elementType !== type) throw dataError("Unexpected data type for " + name);
     return e.data;
 }
 
