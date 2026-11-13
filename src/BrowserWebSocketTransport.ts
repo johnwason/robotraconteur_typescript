@@ -182,7 +182,7 @@ export class BrowserWebSocketTransport implements Transport, StreamTransportPare
     /** @param node The node the transport belongs to. Register the transport with it too */
     constructor(public node: RobotRaconteurNode) {}
 
-    /** True for rr+ws and rr+wss URLs */
+    /** True for tcp, rr+tcp, rr+ws, and rr+wss URLs */
     canConnectService(url: string): boolean
     {
         return ["tcp", "rr+tcp", "rr+ws", "rr+wss"].includes(parseConnectionUrl(url).scheme);

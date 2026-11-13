@@ -88,7 +88,6 @@ export function parseConnectionUrl(url: string): ParsedConnectionUrl
     return { scheme, host, port, path: m[4] ? m[4] : "/", nodeid: nodeid ? new NodeID(nodeid) : NodeID.Any, nodename, service };
 }
 
-/** One end of a client or service session, identified by a number unique within the node */
 /** Something messages are routed to, such as a client. Needed only to write a transport */
 export interface Endpoint
 {
@@ -100,7 +99,6 @@ export interface Endpoint
     transportConnectionClosed(): void;
 }
 
-/** A connected transport stream used by one client */
 /** A connection to another node made by a transport. Needed only to write a transport */
 export interface ITransportConnection
 {
