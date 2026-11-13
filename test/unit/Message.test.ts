@@ -16,6 +16,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { DataTypes, MessageEntryType, MessageErrorType } from "../../src/DataTypes.js";
+import { RobotRaconteurError } from "../../src/Error.js";
 import { deserializeMessage, Message, MessageElement, MessageEntry, serializeMessage } from "../../src/Message.js";
 import { NodeID } from "../../src/NodeID.js";
 import { parseConnectionUrl } from "../../src/Transport.js";
@@ -171,8 +172,8 @@ test("connection URL parsing", () =>
     assert.equal(old.nodename, "node");
     assert.equal(old.service, "service");
 
-    for (const bad of ["nonsense", "rr+ws://localhost", "rr+ws://localhost?nodename=x", "rr+ws://localhost?service=s&nodename=1bad"])
+    for (const bad of ["nonsense", "rr+ws://localhost", "rr+ws://localhost?nodename=x", "rr+ws://localhost?service=s&nodename=1bad", "rr+ws://localhost?service=a%zz"])
     {
-        assert.throws(() => parseConnectionUrl(bad), Error, bad);
+        assert.throws(() => parseConnectionUrl(bad), (e: unknown) => e instanceof RobotRaconteurError && e.errorCode === MessageErrorType.ConnectionError, bad);
     }
 });

@@ -68,7 +68,16 @@ export function parseConnectionUrl(url: string): ParsedConnectionUrl
         if (q === "") continue;
         const kv = q.split("=");
         if (kv.length !== 2 || !kv[0] || !kv[1]) throw urlError();
-        params.set(kv[0], decodeURIComponent(kv[1]));
+        let value: string;
+        try
+        {
+            value = decodeURIComponent(kv[1]);
+        }
+        catch
+        {
+            throw urlError();
+        }
+        params.set(kv[0], value);
     }
     const service = params.get("service");
     if (!service || service.trim() === "") throw urlError();
