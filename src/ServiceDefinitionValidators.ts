@@ -121,7 +121,7 @@ function verifyConstant(c: ServiceDefinition["constants"][number], def: ServiceD
     }
 
     const is_float = t.type === "double" || t.type === "single";
-    if (!is_float && !(t.type in INT_RANGES)) fail(`Invalid type for constant "${c.name}"`);
+    if (!is_float && !Object.prototype.hasOwnProperty.call(INT_RANGES, t.type)) fail(`Invalid type for constant "${c.name}"`);
     const verifyOne = (s: string) =>
     {
         if (is_float)

@@ -209,6 +209,8 @@ test("validators reject semantic errors", () =>
         "struct a\nfield string[] b\nend",
         "constant int8 c 500",
         "constant double c abc",
+        "constant toString c 5",
+        "constant constructor c 5",
         'constant string c "bad\\q"',
         "pod a\nfield double[] b\nend",
         "pod a\nfield string b\nend",
