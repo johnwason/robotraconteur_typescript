@@ -784,6 +784,8 @@ export class ServiceStub
         const early = this.early_pipes.get(key);
         if (early) return early;
         if (!this.connecting_pipes.some((x) => x.name === name && (x.index === -1 || x.index === index))) return undefined;
+        // Each pending connect can create at most one endpoint before its reply arrives, as in Core
+        if (this.early_pipes.size >= this.connecting_pipes.length) return undefined;
         const m = this.context.findMember(this.objectType, name);
         if (!m || m.kind !== "pipe") return undefined;
         const h = this.createPipeHandle(m, index, this.isPipeUnreliable(name));
