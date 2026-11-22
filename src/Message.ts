@@ -299,7 +299,10 @@ class ArrayBinaryReader
     }
 }
 
-function readElement(r: ArrayBinaryReader, limit: number): MessageElement
+/** The deepest nesting of message element lists accepted when reading a message, as Core's MessageMaxNestingDepth */
+const MAX_NESTING_DEPTH = 512;
+
+function readElement(r: ArrayBinaryReader, limit: number, depth = 0): MessageElement
 {
     const end = r.sectionEnd(limit);
     const name = r.string16(end);
@@ -315,8 +318,9 @@ function readElement(r: ArrayBinaryReader, limit: number): MessageElement
     }
     else if (type >= DataTypes.structure_t)
     {
+        if (depth >= MAX_NESTING_DEPTH) throw new RangeError("Message element nesting depth exceeds maximum");
         const elements: MessageElement[] = [];
-        for (let i = 0; i < count; i++) elements.push(readElement(r, end));
+        for (let i = 0; i < count; i++) elements.push(readElement(r, end, depth + 1));
         data = new MessageElementNestedElementList(type, type_name, elements);
     }
     else if (type !== DataTypes.void_t)

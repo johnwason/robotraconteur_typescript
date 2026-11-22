@@ -142,6 +142,22 @@ test("serialize rejects a header longer than 65535 bytes", () =>
     assert.throws(() => serializeMessage(m), RangeError);
 });
 
+test("deserialize limits the nesting depth of element lists to 512, as Core", () =>
+{
+    const nested = (levels: number) =>
+    {
+        let e = new MessageElement("v", DataTypes.int32_t, Int32Array.of(1));
+        for (let i = 0; i < levels; i++) e = MessageElement.nested("v", DataTypes.list_t, "", [e]);
+        const m = new Message();
+        const entry = new MessageEntry(MessageEntryType.FunctionCallReq, "f");
+        entry.addElement(e);
+        m.entries.push(entry);
+        return serializeMessage(m);
+    };
+    assert.equal(deserializeMessage(nested(512)).entries[0]!.elements.length, 1);
+    assert.throws(() => deserializeMessage(nested(513)), RangeError);
+});
+
 test("NodeID parsing and formatting", () =>
 {
     const s = "{00112233-4455-6677-8899-aabbccddeeff}";
