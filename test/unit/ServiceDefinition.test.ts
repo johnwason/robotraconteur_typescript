@@ -212,6 +212,17 @@ test("struct constants refer to the constants of their own scope, as in Core", (
     verifies("constant int32 a 1\nconstant struct s {f: a}\nobject o\nproperty double p\nend");
 });
 
+test("reserved names are checked as in Core's VerifyName", () =>
+{
+    for (const b of ["struct Get_a\nfield double b\nend", "object o\nproperty double SET_x\nend", "object o\nfunction void Async_f()\nend",
+        "object o\nproperty double self\nend", "struct this\nfield double b\nend", "enum e\nMe = 1\nend"])
+    {
+        assert.throws(() => verifies(b), Error, b);
+    }
+    // Core does not check parameter names
+    verifies("object o\nfunction void f(double self, double Get_x)\nend");
+});
+
 test("validators reject semantic errors", () =>
 {
     const bad = [

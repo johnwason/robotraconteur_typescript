@@ -69,8 +69,12 @@ function fail(message: string): never
 function verifyName(name: string, what: string): void
 {
     if (!R_NAME.test(name)) fail(`Invalid ${what} name "${name}"`);
-    if (/^(?:rr|robotraconteur)/i.test(name) || /^(?:get_|set_|async_)/.test(name)) fail(`${what} name "${name}" uses a reserved prefix`);
+    // Core VerifyName compares the prefixes case-insensitively and reserves this/self/Me. Core does not
+    // check parameter names at all, so parameters keep the checks they had
+    const prefixes = what === "parameter" ? /^(?:get_|set_|async_)/ : /^(?:get_|set_|async_)/i;
+    if (/^(?:rr|robotraconteur)/i.test(name) || prefixes.test(name)) fail(`${what} name "${name}" uses a reserved prefix`);
     if (RESERVED.has(name)) fail(`${what} name "${name}" is a keyword`);
+    if (what !== "parameter" && (name === "this" || name === "self" || name === "Me")) fail(`The names "this", "self", and "Me" are reserved (${what} "${name}")`);
 }
 
 function verifyUnique(names: string[], scope: string): void
