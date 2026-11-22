@@ -128,6 +128,31 @@ test("multidimensional arrays", () =>
     assert.throws(() => roundTrip("double[3,3]", m));
 });
 
+test("unpacking checks the dims of pod and named array multidimensional arrays", () =>
+{
+    /** Pack a valid value, then replace the dims sent with it */
+    const withDims = (type: string, value: unknown, dims: MessageElement) =>
+    {
+        const t = parseTypeDefinition(type);
+        const e = packElement("v", t, value, def, ctx);
+        const l = e.castNested().elements;
+        l[l.findIndex((x) => x.elementName === "dims")] = dims;
+        return () => unpackElement(e, t, def, ctx);
+    };
+    const pods = { dims: Uint32Array.of(2, 1), array: [{ i: 1 }, { i: 2 }] };
+    const vecs = { dims: Uint32Array.of(2, 1), array: [{ x: 1, y: 2 }, { x: 3, y: 4 }] };
+    const dims = (...d: number[]) => new MessageElement("dims", DataTypes.uint32_t, Uint32Array.from(d));
+    for (const [type, value] of [["inner[*]", pods], ["inner[2,1]", pods], ["vec[*]", vecs], ["vec[2,1]", vecs]] as const)
+    {
+        assert.deepEqual((withDims(type, value, dims(2, 1))() as { dims: Uint32Array }).dims, Uint32Array.of(2, 1));
+        // The dims must give the number of elements, and match fixed dimensions
+        assert.throws(withDims(type, value, dims(3, 1)), RobotRaconteurError);
+        assert.throws(withDims(type, value, new MessageElement("dims", DataTypes.int32_t, Int32Array.of(2, 1))), RobotRaconteurError);
+    }
+    assert.throws(withDims("inner[2,1]", pods, dims(1, 2)), RobotRaconteurError);
+    assert.throws(withDims("vec[2,1]", vecs, dims(1, 2)), RobotRaconteurError);
+});
+
 test("containers", () =>
 {
     roundTrip("double{list}", [1, 2]);

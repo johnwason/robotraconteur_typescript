@@ -755,6 +755,18 @@ function unpackNumeric(e: MessageElement, t: TypeDefinition, p: PrimitiveInfo): 
     return scalarFromArray(a, p, 0);
 }
 
+/** The dims of a received multidimensional array, checked against its element count and the declared dimensions */
+function unpackDims(l: MessageElement[], count: number, t: TypeDefinition): Uint32Array
+{
+    const e = l.find((x) => x.elementName === "dims");
+    if (!e) throw dataError("Message element not found: dims");
+    if (e.elementType !== DataTypes.uint32_t) throw dataError("Unexpected data type for dims");
+    const dims = e.data as Uint32Array;
+    if (dims.reduce((a, b) => a * b, 1) !== count) throw dataError("Array dimension mismatch");
+    verifyDims(dims, t);
+    return dims;
+}
+
 function findData(l: MessageElement[], name: string, type?: DataTypes): unknown
 {
     const e = l.find((x) => x.elementName === name);
@@ -792,7 +804,8 @@ function unpackPod(e: MessageElement, t: TypeDefinition, r: ResolvedType, ctx: T
         const l = e.castNested(DataTypes.pod_multidimarray_t).elements;
         const a = l.find((x) => x.elementName === "array");
         if (!a) throw dataError("Message element not found: array");
-        return { dims: findData(l, "dims"), array: unpackPodArray(a, r, ctx) };
+        const array = unpackPodArray(a, r, ctx);
+        return { dims: unpackDims(l, array.length, t), array };
     }
     const items = unpackPodArray(e, r, ctx);
     if (t.array)
@@ -829,7 +842,8 @@ function unpackNamedArray(e: MessageElement, t: TypeDefinition, r: ResolvedType,
         const l = e.castNested(DataTypes.namedarray_multidimarray_t).elements;
         const a = l.find((x) => x.elementName === "array");
         if (!a) throw dataError("Message element not found: array");
-        return { dims: findData(l, "dims"), array: view ? unpackNamedArrayView(a, r, ctx) : unpackNamedArrayItems(a, r, ctx) };
+        const array = view ? unpackNamedArrayView(a, r, ctx) : unpackNamedArrayItems(a, r, ctx);
+        return { dims: unpackDims(l, array.length, t), array };
     }
     if (view)
     {
