@@ -109,6 +109,25 @@ test("pipe packets received out of order are delivered in order", () =>
     assert.deepEqual([h.receivePacket(), h.receivePacket(), h.receivePacket()], [10, 20, 30]);
 });
 
+test("reliable pipes hold only packets a bounded distance ahead", () =>
+{
+    const { h } = pipe();
+    const out_of_order = (h as unknown as { out_of_order: Map<number, unknown> }).out_of_order;
+    h.packetReceived(pipePacket(1, 1));
+    // Already received, and too far ahead: dropped
+    h.packetReceived(pipePacket(1, 10));
+    h.packetReceived(pipePacket(0, 10));
+    h.packetReceived(pipePacket(2000, 10));
+    h.packetReceived(pipePacket(0xffffffff, 10));
+    assert.equal(out_of_order.size, 0);
+    h.packetReceived(pipePacket(1025, 1025));
+    h.packetReceived(pipePacket(3, 3));
+    assert.equal(out_of_order.size, 2);
+    h.packetReceived(pipePacket(2, 2));
+    assert.equal(h.available, 3);
+    assert.equal(out_of_order.size, 1);
+});
+
 test("unreliable pipes deliver packets as they arrive and mark what they send", async () =>
 {
     const { h, sent } = pipe({ unreliable: true });
