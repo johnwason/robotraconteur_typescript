@@ -270,7 +270,11 @@ export function parseTypeDefinition(s: string, line_number = 0): TypeDefinition
     if (!m) throw new ServiceDefinitionParseError(`Could not parse type "${s.trim()}"`, line_number);
 
     const t: TypeDefinition = { type: m[1]! };
-    const dims = (v: string) => v.split(",").map((x) => parseInt(x, 10));
+    const dims = (v: string) => v.split(",").map((x) =>
+    {
+        if (!/^[0-9]+$/.test(x)) throw new ServiceDefinitionParseError(`Could not parse type "${s.trim()}"`, line_number);
+        return parseInt(x, 10);
+    });
     if (m[2]) Object.assign(t, { array: "array", arrayLength: [0], arrayVarLength: true });
     else if (m[3]) Object.assign(t, { array: "array", arrayLength: dims(m[3]), arrayVarLength: false });
     else if (m[4]) Object.assign(t, { array: "array", arrayLength: dims(m[4]), arrayVarLength: true });

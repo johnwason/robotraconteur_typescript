@@ -192,6 +192,12 @@ function verifies(body: string): void
     verifyServiceDefinition(parseServiceDefinition(svc(body)));
 }
 
+test("array dimensions must all be numbers", () =>
+{
+    for (const t of ["double[3,,4]", "double[,3]", "double[3,4,]"]) assert.throws(() => parseTypeDefinition(t), (e: Error) => e.name === "ServiceDefinitionParseError", t);
+    assert.deepEqual(parseTypeDefinition("double[3,4]").arrayLength, [3, 4]);
+});
+
 test("validators accept a valid definition", () =>
 {
     verifies("constant int32 c1 5\nenum e\na = 1, b\nend\nstruct s\nfield double[] d\nend\nobject o\nproperty s p\nfunction e f(double[] x)\nend");

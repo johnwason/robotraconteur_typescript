@@ -91,3 +91,31 @@ test("rr+tcp URLs without a port connect to port 48653, as in Core", async () =>
     }
     assert.deepEqual(opened, ["ws://robot:48653?service=s", "ws://[fe80::1]:48653/?service=s", "ws://robot:1234?service=s", "ws://robot:80/path?service=s"]);
 });
+
+test("a WebSocketStream that does not open in time is reported as a timeout", async () =>
+{
+    class FakeWebSocketStream
+    {
+        opened: Promise<never>;
+        closed: Promise<never>;
+        constructor(_url: string, options: { signal: AbortSignal })
+        {
+            this.opened = new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(new Error("aborted"))));
+            this.closed = this.opened;
+        }
+    }
+    const g = globalThis as { WebSocketStream?: unknown };
+    const saved = g.WebSocketStream;
+    g.WebSocketStream = FakeWebSocketStream;
+    try
+    {
+        const t = new BrowserWebSocketTransport(new RobotRaconteurNode());
+        t.useWebSocketStream = true;
+        t.defaultConnectTimeout = 10;
+        await assert.rejects(t.createTransportConnection("rr+ws://robot/?service=s", undefined as never), /Timed out connecting/);
+    }
+    finally
+    {
+        g.WebSocketStream = saved;
+    }
+});

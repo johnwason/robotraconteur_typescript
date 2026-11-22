@@ -20,6 +20,7 @@ import { RobotRaconteurError } from "../../src/Error.js";
 import { deserializeMessage, Message, MessageElement, MessageEntry, serializeMessage } from "../../src/Message.js";
 import { NodeID } from "../../src/NodeID.js";
 import { parseConnectionUrl } from "../../src/Transport.js";
+import type { RobotRaconteurError } from "../../src/Error.js";
 
 function sample(): Message
 {
@@ -156,6 +157,23 @@ test("deserialize limits the nesting depth of element lists to 512, as Core", ()
     };
     assert.equal(deserializeMessage(nested(512)).entries[0]!.elements.length, 1);
     assert.throws(() => deserializeMessage(nested(513)), RangeError);
+});
+
+test("unknown element types are reported as malformed messages or data type errors", () =>
+{
+    const m = new Message();
+    const entry = new MessageEntry(MessageEntryType.FunctionCallReq, "f");
+    entry.addElement(new MessageElement("v", DataTypes.int32_t, Int32Array.of(1)));
+    m.entries.push(entry);
+    const b = serializeMessage(m);
+    // The element's name ("v", length 1) is followed by its type
+    let i = 0;
+    while (!(b[i] === 1 && b[i + 1] === 0 && b[i + 2] === 0x76)) i++;
+    b[i + 3] = 50;
+    assert.throws(() => deserializeMessage(b), RangeError);
+
+    entry.elements = [new MessageElement("v", 50 as DataTypes, Int32Array.of(1))];
+    assert.throws(() => serializeMessage(m), (e: RobotRaconteurError) => e.errorName === "RobotRaconteur.DataTypeError");
 });
 
 test("NodeID parsing and formatting", () =>

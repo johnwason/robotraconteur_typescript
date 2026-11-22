@@ -122,7 +122,7 @@ async function openWebSocketStream(ctor: WebSocketStreamConstructor, url: string
     }
     catch
     {
-        throw connectionError("Could not connect to WebSocket");
+        throw connectionError(abort.signal.aborted ? "Timed out connecting to WebSocket" : "Could not connect to WebSocket");
     }
     finally
     {

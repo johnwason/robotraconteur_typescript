@@ -203,7 +203,7 @@ function writeElement(w: ArrayBinaryWriter, e: MessageElement): void
     else if (d !== null)
     {
         const info = primitivesByType.get(e.elementType);
-        if (!info) throw new TypeError("Invalid numeric message element type");
+        if (!info) throw dataError("Invalid numeric message element type");
         count = d.byteLength / info.size;
         w.bytes(new Uint8Array(d.buffer, d.byteOffset, d.byteLength));
     }
@@ -326,7 +326,7 @@ function readElement(r: ArrayBinaryReader, limit: number, depth = 0): MessageEle
     else if (type !== DataTypes.void_t)
     {
         const info = primitivesByType.get(type);
-        if (!info) throw new TypeError("Unknown message element data type: " + type);
+        if (!info) throw new RangeError("Unknown message element data type: " + type);
         const b = r.take(count * info.size, end);
         // Copy so that the typed array is correctly aligned and does not hold the receive buffer
         data = new info.ctor(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer);
