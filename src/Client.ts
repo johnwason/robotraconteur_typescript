@@ -1226,9 +1226,14 @@ export class ClientContext
         const first = m.entries[0];
         if (first?.entryType === MessageEntryType.ConnectClientRet || first?.entryType === MessageEntryType.ConnectClientCombinedRet)
         {
-            this.remoteEndpoint = m.header.senderEndpoint;
-            this.remoteNodeID = m.header.senderNodeID;
-            this.remoteNodeName = m.header.senderNodeName;
+            // Accept the service's identity only from the first connect reply, and only if it matches the
+            // NodeID the connection URL asked for (when it asked for one)
+            if (this.remoteEndpoint === 0 && (this.remoteNodeID.isAnyNode || this.remoteNodeID.equals(m.header.senderNodeID)))
+            {
+                this.remoteEndpoint = m.header.senderEndpoint;
+                this.remoteNodeID = m.header.senderNodeID;
+                this.remoteNodeName = m.header.senderNodeName;
+            }
         }
 
         for (const e of m.entries)
