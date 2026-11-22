@@ -98,7 +98,8 @@ function verifyIntValue(s: string, type: string, name: string): void
     if (v < r[0] || v > r[1]) fail(`Value out of range for constant "${name}"`);
 }
 
-function verifyConstant(c: ServiceDefinition["constants"][number], def: ServiceDefinition): void
+/** constants: the constants of the scope the constant is in (the definition's, or an entry's), as Core */
+function verifyConstant(c: ServiceDefinition["constants"][number], def: ServiceDefinition, constants = def.constants): void
 {
     verifyName(c.name, "constant");
     const t = c.type;
@@ -109,7 +110,7 @@ function verifyConstant(c: ServiceDefinition["constants"][number], def: ServiceD
         if (!/^\{[ \t]*(?:\w+[ \t]*:[ \t]*\w+(?:[ \t]*,[ \t]*\w+[ \t]*:[ \t]*\w+)*[ \t]*)?\}$/.test(v)) fail(`Invalid struct constant "${c.name}"`);
         for (const m of v.matchAll(/:[ \t]*(\w+)/g))
         {
-            if (!def.constants.some((x) => x.name === m[1])) fail(`Unknown constant "${m[1]}" in "${c.name}"`);
+            if (!constants.some((x) => x.name === m[1])) fail(`Unknown constant "${m[1]}" in "${c.name}"`);
         }
         return;
     }
@@ -339,7 +340,7 @@ function verifyEntry(e: EntryDefinition, kind: "struct" | "pod" | "namedarray" |
 {
     verifyName(e.name, kind);
     verifyUnique([...e.constants.map((x) => x.name), ...e.members.map((x) => x.name)], `${kind} "${e.name}"`);
-    e.constants.forEach((x) => verifyConstant(x, c.def));
+    e.constants.forEach((x) => verifyConstant(x, c.def, e.constants));
     if (kind !== "object" && e.members.length === 0) fail(`${kind} "${e.name}" has no fields`);
 
     if (kind === "object")

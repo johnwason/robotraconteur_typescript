@@ -197,6 +197,15 @@ test("validators accept a valid definition", () =>
     verifies("constant int32 c1 5\nenum e\na = 1, b\nend\nstruct s\nfield double[] d\nend\nobject o\nproperty s p\nfunction e f(double[] x)\nend");
 });
 
+test("struct constants refer to the constants of their own scope, as in Core", () =>
+{
+    // Core VerifyConstantStruct is given the entry's constants for constants inside an object or struct
+    verifies("object o\nconstant int32 a 1\nconstant struct s {f: a}\nend");
+    verifies("struct t\nconstant int32 a 1\nconstant struct s {f: a}\nfield double d\nend");
+    assert.throws(() => verifies("constant int32 a 1\nobject o\nconstant struct s {f: a}\nend"), Error);
+    verifies("constant int32 a 1\nconstant struct s {f: a}\nobject o\nproperty double p\nend");
+});
+
 test("validators reject semantic errors", () =>
 {
     const bad = [
