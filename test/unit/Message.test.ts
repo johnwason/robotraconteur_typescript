@@ -20,7 +20,6 @@ import { RobotRaconteurError } from "../../src/Error.js";
 import { deserializeMessage, Message, MessageElement, MessageEntry, serializeMessage } from "../../src/Message.js";
 import { NodeID } from "../../src/NodeID.js";
 import { parseConnectionUrl } from "../../src/Transport.js";
-import type { RobotRaconteurError } from "../../src/Error.js";
 
 function sample(): Message
 {
