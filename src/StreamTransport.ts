@@ -447,7 +447,8 @@ export class StreamConnection implements ITransportConnection
                 m.entries.push(new MessageEntry(MessageEntryType.ConnectionTest));
                 this.sendMessage(m);
             }
-            if (this.tlastsend - this.tlastrec > this.parent.defaultReceiveTimeout || now - this.tlastrec_mes > this.parent.node.transportInactivityTimeout)
+            // tlastsend is set when a write starts and freezes while it is stalled, so measure from now
+            if (now - this.tlastrec > this.parent.defaultReceiveTimeout || now - this.tlastrec_mes > this.parent.node.transportInactivityTimeout)
             {
                 this.close();
             }
