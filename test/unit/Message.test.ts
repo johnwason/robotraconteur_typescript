@@ -175,6 +175,30 @@ test("unknown element types are reported as malformed messages or data type erro
     assert.throws(() => serializeMessage(m), (e: RobotRaconteurError) => e.errorName === "RobotRaconteur.DataTypeError");
 });
 
+test("only the nested element types Core reads are accepted", () =>
+{
+    const message = (type: number) =>
+    {
+        const m = new Message();
+        const e = new MessageEntry(MessageEntryType.FunctionCallReq, "f");
+        e.addElement(MessageElement.nested("x", type as DataTypes, "t", [new MessageElement("a", DataTypes.int32_t, Int32Array.of(1))]));
+        m.entries.push(e);
+        return serializeMessage(m);
+    };
+    for (const type of [101, 102, 103, 108, 109, 110, 111, 115, 116, 117])
+    {
+        const el = deserializeMessage(message(type)).entries[0]!.elements[0]!;
+        assert.equal(el.elementType, type);
+        assert.equal(el.elementTypeName, "t");
+    }
+    // As Core's MessageElement::Read: object_t, varvalue_t, varobject_t, enum_t, namedtype_t, namedarray_t and
+    // undefined types are errors
+    for (const type of [104, 105, 106, 107, 112, 113, 114, 118, 200, 1000, 65535])
+    {
+        assert.throws(() => deserializeMessage(message(type)), RangeError, String(type));
+    }
+});
+
 test("NodeID parsing and formatting", () =>
 {
     const s = "{00112233-4455-6677-8899-aabbccddeeff}";
