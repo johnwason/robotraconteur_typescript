@@ -1,6 +1,6 @@
 {
     "name": "robotraconteur",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Small pure TypeScript Robot Raconteur client for browsers",
     "license": "Apache-2.0",
     "author": "Wason Technology, LLC",

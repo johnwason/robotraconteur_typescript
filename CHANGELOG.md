@@ -2,8 +2,13 @@
 
 The API may change in any release before 1.0.
 
-## Unreleased
+## 0.1.1
 
+* Bug fixes in message serialization and unpacking, connections and URLs, the client and pipes, and service definition validation, several of them the same fixes as in Robot Raconteur Core 1.3.0.
+* Behavior changes:
+  * The client accepts the service identity only from the first connect reply.
+  * Reliable pipes keep at most 1024 out-of-order packets.
+  * Reserved member names are checked case-insensitively, and `this`, `self` and `Me` are reserved.
 * Export `./package.json`, so that tools can read the package's version with `require("robotraconteur/package.json")`.
 
 ## 0.1.0

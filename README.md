@@ -46,7 +46,7 @@ For `rr+tcp`, TLS, discovery, and writing services in Node.js, see [robotraconte
 Load `robotraconteur.min.js` with a script tag, from a CDN or from a copy of [examples/robotraconteur.min.js](examples/robotraconteur.min.js) next to your HTML file. Everything is then available under the name `RobotRaconteur`.
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/robotraconteur@0.1.0/dist/robotraconteur.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/robotraconteur@0.1.1/dist/robotraconteur.min.js"></script>
 <script>
     async function main() {
         const node = new RobotRaconteur.RobotRaconteurNode();
