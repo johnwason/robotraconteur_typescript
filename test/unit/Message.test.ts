@@ -234,3 +234,11 @@ test("connection URL parsing", () =>
         assert.throws(() => parseConnectionUrl(bad), (e: unknown) => e instanceof RobotRaconteurError && e.errorCode === MessageErrorType.ConnectionError, bad);
     }
 });
+
+test("connection URLs with an invalid node ID give a connection URL error", () =>
+{
+    for (const bad of ["rr+tcp://localhost:1/?nodeid=x&service=s", "rr+ws://localhost?service=s&nodeid={0011}", "tcp://localhost:1/{x}/s"])
+    {
+        assert.throws(() => parseConnectionUrl(bad), (e: unknown) => e instanceof RobotRaconteurError && e.errorCode === MessageErrorType.ConnectionError && e.message === "Invalid connection URL", bad);
+    }
+});
